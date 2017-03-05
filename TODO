@@ -1,17 +1,16 @@
-- Fix bug: redraw_delayed resets delay to its initial value, not to the newly given value
-- Multiprocessing for rendering (see cpu_count? process pool?)
 - File -> Copy location... (popup with 4 values as a tuple, "Copy to clipboard", "Close), Go to location...,
+- Multiprocessing for rendering (see cpu_count? process pool?)
 - Switch to ctr/zoom instead of four bounds; always keep 1:1 aspect ratio (by screen dimensions, not pixel count)
 - Arbitrary precision/zooming
 - Iteration adjustment: View->Set Maximum Iterations...
 - Viewport dragging (without redrawing the whole canvas)
 - Help->About
 - On zoom or resize, stretch old Surface instead of filling with black
-- Fix flickering due to frame getting redrawn during resize (maybe use a tk Canvas with an image instead of a pygame Surface)
+- Fix flickering/blackness due to frame getting redrawn during resize (maybe use a tk Canvas with an image instead of a pygame Surface)
 - Progressive rendering
 - "Automatic" max iterations feature
 - Make color gradient dynamically configurable
 - Make a GPU implementation
 - Resize Surface to fit frame (it should work if the window is larger than the physical display)
-- Switching between Mandelbrot and Julia sets
+- Formula editing: allow Julia sets
 - Internal coloring

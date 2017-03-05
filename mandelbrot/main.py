@@ -21,18 +21,18 @@ class Viewport:
     # The window referenced by window_id must exist (eg. call root.update() in tkinter)
     def __init__(self, window_id):
         self.width, self.height = 0, 0
-        self.re_min, self.re_max = -2, 0.8
-        self.im_min, self.im_max = -1.4, 1.4
+        self.re_min, self.re_max = -2, 2
+        self.im_min, self.im_max = -2, 2
 
-        self.redraw_sem = mp.Semaphore()
-        self.redraw_waiting = False
+        self.size_q = mp.Queue()
+        self.bounds_q = mp.Queue()
 
         self.render_event = mp.Event()
         self.refresh_event = mp.Event()
+        self.redraw_q = mp.Queue()
+        self.redraw_scheduled = False
         self.stop_event = mp.Event()
         self.quit_event = mp.Event()
-        self.size_q = mp.Queue()
-        self.bounds_q = mp.Queue()
 
         self.status_callbacks = []
 
@@ -44,7 +44,8 @@ class Viewport:
             self.width = width
             self.height = height
             self.size_q.put((self.width, self.height))
-            self.redraw_delayed(0.100)
+            self.stop_event.set()
+            self.redraw_delayed(0)
         self.update_status()
 
     def register_status_callback(self, cb):
@@ -95,24 +96,29 @@ class Viewport:
             self.refresh_event.clear()
             pygame.display.update()
 
+    # Clean up child processes
     def close(self):
         self.quit_event.set()
         self.stop_event.set()
         self.render_event.set()  # Release block in render()
 
-    # Call redraw() after the given delay (in seconds). Repeat calls will reset the delay. Do not block.
+    # Call redraw() after the given delay (in seconds). Repeat calls reset the delay to
+    # the new value. Do not block.
     def redraw_delayed(self, delay):
-        if not self.redraw_waiting:
-            def wait():
-                # Wait until 'delay' seconds after the last acquire
-                while self.redraw_sem.acquire(timeout=delay):
-                    pass
-                self.redraw_waiting = False
-                self.redraw()
-            self.redraw_waiting = True
-            t = threading.Thread(target=wait, daemon=True)
+        if not self.redraw_scheduled:
+            def wait(delay):
+                while True:
+                    try:
+                        delay = self.redraw_q.get(timeout=delay)
+                    except queue.Empty as e:  # Timeout reached
+                        self.redraw_scheduled = False
+                        self.redraw()
+                        break
+            self.redraw_scheduled = True
+            t = threading.Thread(target=wait, daemon=True, args=[delay])
             t.start()
-        self.redraw_sem.release()
+        else:
+            self.redraw_q.put(delay)
 
     # Re-render immediately. Block until rendering has begun anew.
     def redraw(self):
@@ -208,7 +214,6 @@ if __name__ == "__main__":
     embed.bind('<Configure>', lambda _: viewport.set_size(*widget_size(embed)))
     embed.bind('<Visibility>', lambda _: embed.after(1, viewport.refresh))
 
-    viewport.set_size(*widget_size(embed))
     viewport.register_status_callback(status.set)
 
     root.mainloop()
