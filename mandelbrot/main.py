@@ -5,7 +5,8 @@ import pygame
 import os
 import sys
 import threading
-import math
+
+import mandelbrot
 
 PROGRAM_NAME = "Mandelbrot"
 WINDOW_WIDTH = 400
@@ -114,31 +115,14 @@ class Viewport:
                 re = self.re_min + ( (self.re_max - self.re_min) * x / self.width )
                 for y in range(0, self.height):
                     im = self.im_max - ( (self.im_max - self.im_min) * y / self.height )
-                    self.canvas.set_at((x, y), mandelbrot_color(re + im*1j))
+                    self.canvas.set_at((x, y), mandelbrot.point_color(
+                        re + im*1j, MAX_ITERATIONS))
                 pygame.display.update()
 
 
 def widget_size(widget):
     return (widget.winfo_width(), widget.winfo_height())
 
-# The below math stuff should be in a separate mandelbrot.py; this should be main.py
-
-def mandelbrot_color(c):
-    z = 0
-    for iter in range(0, MAX_ITERATIONS):
-        z = z**2 + c
-        if abs(z) >= 2:
-            # c is outside of set
-            red   = math.floor(triangle(iter,  30) * 255)
-            green = math.floor(triangle(iter, 100) * 255)
-            blue  = math.floor(triangle(iter, 300) * 255)
-            return (red, green, blue)
-    return (0,0,0) # c might be inside the set
-
-# Triangle wave with range from 0 to 1 and given period
-def triangle(x, period):
-    return 2 * abs(x/period - round(x/period))
-    
 
 if __name__ == "__main__":
     root = tk.Tk()
