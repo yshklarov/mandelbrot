@@ -159,6 +159,8 @@ if __name__ == "__main__":
     root.bind_all('r', lambda _: viewport.redraw())
     root.bind_all('<Key-F1>', lambda _: status.set('Drag to move; scroll to zoom'))
 
+    view_menu.add_command(label='Redraw', accelerator='r', command=viewport.redraw)
+    view_menu.insert_separator(1)
     view_menu.add_command(label='Zoom In', accelerator='+', command=viewport.zoom_in)
     view_menu.add_command(label='Zoom Out', accelerator='-', command=viewport.zoom_out)
     embed.bind('<Button-4>', lambda ev: viewport.zoom_in(x=ev.x, y=ev.y))
