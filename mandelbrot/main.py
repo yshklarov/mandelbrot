@@ -82,7 +82,11 @@ class Viewport:
         self.im_max = center_im + ratio*(self.im_max - center_im)
         self.update_status()
         self.redraw()
-        
+
+    # Re-paint the window surface (without rendering anew)
+    def refresh(self):
+        pygame.display.update()
+
     # Redraw after the given delay (in seconds). Repeat calls will reset the delay. Do not block.
     def redraw_delayed(self, delay):
         def wait():
@@ -133,7 +137,7 @@ if __name__ == "__main__":
     menu_bar = tk.Menu(root)
     root.config(menu=menu_bar)
 
-    embed = tk.Frame(root)
+    embed = tk.Frame(root, bg='black')
     embed.pack(expand=1, fill=tk.BOTH)
 
     root.update()  # Create embed frame before calling Viewport()
@@ -150,7 +154,7 @@ if __name__ == "__main__":
     menu_bar.add_cascade(label='File', menu=file_menu)
     menu_bar.add_cascade(label='View', menu=view_menu)
     #menu_bar.add_cascade(label='Help', menu=help_menu)
-    file_menu.add_command(label='Quit', accelerator='q', command=root.destroy)
+    file_menu.add_command(label='Quit', accelerator='q', command=root.quit)
     view_menu.add_command(label='Redraw', accelerator='r', command=viewport.redraw)
     view_menu.insert_separator(1)
     view_menu.add_command(label='Zoom In', accelerator='+', command=viewport.zoom_in)
@@ -158,7 +162,7 @@ if __name__ == "__main__":
     #help_menu.add_command(label='Guide')
     #help_menu.add_command(label='About')
 
-    root.bind_all('q', lambda _: root.destroy())
+    root.bind_all('q', lambda _: root.quit())
     root.bind_all('r', lambda _: viewport.redraw())
     root.bind_all('<Key-F1>', lambda _: status.set('Drag to move; scroll to zoom'))
     root.bind_all('<KP_Add>', lambda _: viewport.zoom_in())
@@ -167,8 +171,9 @@ if __name__ == "__main__":
     embed.bind('<Button-4>', lambda ev: viewport.zoom_in(x=ev.x, y=ev.y))
     embed.bind('<Button-5>', lambda ev: viewport.zoom_out(x=ev.x, y=ev.y))
 
-    # Window resize or move
+    # Window resize
     root.bind('<Configure>', lambda _: viewport.set_size(*widget_size(embed)))
+    embed.bind('<Visibility>', lambda _: embed.after(1, viewport.refresh))
 
     viewport.register_status_callback(status.set)
     viewport.set_size(*widget_size(embed))

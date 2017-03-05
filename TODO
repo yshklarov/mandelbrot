@@ -4,8 +4,6 @@
 - Iteration adjustment: View->Set Maximum Iterations...
 - Viewport dragging (without redrawing the whole canvas)
 - Help->About
-- Bug: Surface not updating when window exposed (eg. when switching workspaces)
-- Bug: Error messages on quit during rendering
 - Progressive rendering
 - Rectangle zoom (via View menu and Ctrl key)
 - "Automatic" max iterations feature
