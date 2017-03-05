@@ -16,8 +16,9 @@ MAX_ITERATIONS = 600
 
 class Viewport:    
 
-    # Before calling, SDL_WINDOWID must be set and the window must exist.
-    def __init__(self):
+    # The window referenced by window_id must exist (eg. call root.update() in tkinter)
+    def __init__(self, window_id):
+        os.environ['SDL_WINDOWID'] = str(window_id)
         self.canvas = pygame.display.set_mode()
         pygame.display.init()
 
@@ -128,8 +129,21 @@ if __name__ == "__main__":
     root = tk.Tk()
     root.title(PROGRAM_NAME)
     root.geometry('{}x{}'.format(WINDOW_WIDTH, WINDOW_HEIGHT))
-    
+
     menu_bar = tk.Menu(root)
+    root.config(menu=menu_bar)
+
+    embed = tk.Frame(root)
+    embed.pack(expand=1, fill=tk.BOTH)
+
+    root.update()  # Create embed frame before calling Viewport()
+    viewport = Viewport(embed.winfo_id())
+
+    status = tk.StringVar()
+    status_bar = tk.Label(root, bd=1, relief=tk.SUNKEN, anchor=tk.W, height=1, textvariable=status)
+    status_bar.pack(fill=tk.X)
+
+
     file_menu = tk.Menu(menu_bar, tearoff=0)
     view_menu = tk.Menu(menu_bar, tearoff=0)
     help_menu = tk.Menu(menu_bar, tearoff=0)
@@ -137,38 +151,26 @@ if __name__ == "__main__":
     menu_bar.add_cascade(label='View', menu=view_menu)
     #menu_bar.add_cascade(label='Help', menu=help_menu)
     file_menu.add_command(label='Quit', accelerator='q', command=root.destroy)
-    #help_menu.add_command(label='Guide')
-    #help_menu.add_command(label='About')
-    root.config(menu=menu_bar)
-    
-    embed = tk.Frame(root)
-    embed.pack(expand=1, fill=tk.BOTH)
-
-    status = tk.StringVar()
-    status_bar = tk.Label(root, bd=1, relief=tk.SUNKEN, anchor=tk.W, height=1, textvariable=status)
-    status_bar.pack(fill=tk.X)
-
-    os.environ['SDL_WINDOWID'] = str(embed.winfo_id())
-    root.update()  # Initialize window before creating viewport
-
-    viewport = Viewport()
-    viewport.register_status_callback(status.set)
-    viewport.set_size(*widget_size(embed))
-    
-    root.bind_all('q', lambda _: root.destroy())
-    root.bind_all('r', lambda _: viewport.redraw())
-    root.bind_all('<Key-F1>', lambda _: status.set('Drag to move; scroll to zoom'))
-
     view_menu.add_command(label='Redraw', accelerator='r', command=viewport.redraw)
     view_menu.insert_separator(1)
     view_menu.add_command(label='Zoom In', accelerator='+', command=viewport.zoom_in)
     view_menu.add_command(label='Zoom Out', accelerator='-', command=viewport.zoom_out)
+    #help_menu.add_command(label='Guide')
+    #help_menu.add_command(label='About')
+
+    root.bind_all('q', lambda _: root.destroy())
+    root.bind_all('r', lambda _: viewport.redraw())
+    root.bind_all('<Key-F1>', lambda _: status.set('Drag to move; scroll to zoom'))
+    root.bind_all('<KP_Add>', lambda _: viewport.zoom_in())
+    root.bind_all('<KP_Subtract>', lambda _: viewport.zoom_out())
+
     embed.bind('<Button-4>', lambda ev: viewport.zoom_in(x=ev.x, y=ev.y))
-    root.bind('<KP_Add>', lambda _: viewport.zoom_in())
     embed.bind('<Button-5>', lambda ev: viewport.zoom_out(x=ev.x, y=ev.y))
-    root.bind('<KP_Subtract>', lambda _: viewport.zoom_out())
 
     # Window resize or move
     root.bind('<Configure>', lambda _: viewport.set_size(*widget_size(embed)))
+
+    viewport.register_status_callback(status.set)
+    viewport.set_size(*widget_size(embed))
 
     root.mainloop()
