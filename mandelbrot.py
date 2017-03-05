@@ -13,23 +13,26 @@ WINDOW_HEIGHT = 418
 MAX_ITERATIONS = 600
 
 
-class Viewport:
-    re_min, re_max = -2, 0.8
-    im_min, im_max = -1.4, 1.4
-    
+class Viewport:    
+
     # Before calling, SDL_WINDOWID must be set and the window must exist.
     def __init__(self):
         self.canvas = pygame.display.set_mode()
         pygame.display.init()
-        self.width = 0
-        self.height = 0
+
+        self.width, self.height = 0, 0
+        self.re_min, self.re_max = -2, 0.8
+        self.im_min, self.im_max = -1.4, 1.4
+
         self.render_sem = threading.BoundedSemaphore(1)
         self.render_sem.acquire()
         self.rendering_sem = threading.BoundedSemaphore(1)
         self.rendering_sem.acquire()
         self.redraw_sem = threading.Semaphore(1)
         self.redraw_waiting = False
+
         self.status_callbacks = []
+
         rt = threading.Thread(target=self.render)
         rt.daemon = True  # TODO: a more graceful exit
         rt.start()
@@ -51,8 +54,8 @@ class Viewport:
     def status_string(self):
         zoom = 4 / max(self.re_max - self.re_min,
                        self.im_max - self.im_min)
-        return '{:.3f} + {:.3f}i, {:.3f} + {:.3f}i; Zoom = {:.3g}; {}x{}'.format(
-            self.re_min, self.im_min, self.re_max, self.im_max,
+        return '{:.6f} + {:.6f}i; Zoom = {:.3g}; {}x{}'.format(
+            (self.re_min + self.re_max) / 2, (self.im_min + self.im_max) / 2,
             zoom, self.width, self.height)
 
     def zoom_in(self, x=None, y=None):
