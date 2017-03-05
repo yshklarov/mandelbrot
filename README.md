@@ -1,6 +1,6 @@
 Mandelbrot
 ----------
 
-This is a simple desktop utility for exploring the mandelbrot set.
+This is a simple desktop tool for exploring the Mandelbrot set.
 
 ![screenshot](docs/screenshot.png)

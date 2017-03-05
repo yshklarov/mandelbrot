@@ -1,14 +1,17 @@
-- File -> Copy location (just store 4 values as a tuple, and "copied to clipboard" into statusbar), Go to location..., horiz. bar
-- Edit -> Redraw (r)
-- Dynamic iteration adjustment: View->Set Maximum Iterations...
-- Viewport dragging (without redrawing the whole canvas)
-- Add multithreading for rendering
-- Add Help->About
-- Rectangle zoom (via edit menu and ctrl key)
+- File -> Copy location... (popup with 4 values as a tuple, "Copy to clipboard", "Close), Go to location..., horiz. divider in File menu
+- View -> Redraw (r)
+- Multithreading for rendering
 - Arbitrary precision/zooming
-- Add "automatic" max iterations feature
+- Iteration adjustment: View->Set Maximum Iterations...
+- Viewport dragging (without redrawing the whole canvas)
+- Help->About
+- Progressive rendering
+- Rectangle zoom (via View menu and Ctrl key)
+- "Automatic" max iterations feature
 - Make color gradient dynamically configurable
 - Make a GPU implementation
 - Resize Surface to fit frame (it should work if the window is larger than the physical display)
 - Option to keep the aspect ration at 1:1 (by screen dimensions, not pixel count.)
 - On zoom, stretch old Surface instead of filling with black
+- Switching between Mandelbrot and Julia sets
+- Internal coloring
