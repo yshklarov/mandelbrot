@@ -1,0 +1,13 @@
+- Dynamic iteration adjustment: View->Maximum Iterations...
+- Viewport dragging
+- Add multithreading for rendering
+- Add Help->About
+- Rectangle zoom (via edit menu and ctrl key)
+- Arbitrary precision/zooming
+- Add "automatic" max iterations feature
+- Make color gradient dynamically configurable
+- Make a GPU implementation
+- Resize Surface to fit frame (it should work if the window is larger than the physical display)
+- Option to keep the aspect ration at 1:1 (by screen dimensions, not pixel count.)
+- Stretch old Surface instead of filling with black
+- Drag without redrawing the whole canvas
