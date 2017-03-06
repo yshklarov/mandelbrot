@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 
 import tkinter as tk
+import tkinter.messagebox as tkmb
 import pygame
 import os
 import sys
+import ast
+import numbers
 import multiprocessing as mp
 import queue
 import threading
@@ -13,7 +16,7 @@ import mandelbrot
 PROGRAM_NAME = "Mandelbrot"
 WINDOW_WIDTH = 400
 WINDOW_HEIGHT = 418
-MAX_ITERATIONS = 600
+MAX_ITERATIONS = 150
 
 
 class Viewport:    
@@ -48,6 +51,16 @@ class Viewport:
             self.redraw_delayed(0)
         self.update_status()
 
+    def location(self):
+        return (self.re_min, self.re_max,
+                self.im_min, self.im_max)
+
+    def go_to_location(self, bounds):
+        self.re_min, self.re_max, self.im_min, self.im_max = bounds
+        self.bounds_q.put(bounds)
+        self.update_status()
+        self.redraw()
+
     def register_status_callback(self, cb):
         self.status_callbacks.append(cb)
 
@@ -78,14 +91,10 @@ class Viewport:
         center_re = self.re_min + (x / self.width) * (self.re_max - self.re_min)
         center_im = self.im_min + ((self.height - y) / self.height) * (self.im_max - self.im_min)
 
-        self.re_min = center_re - ratio*(center_re - self.re_min)
-        self.re_max = center_re + ratio*(self.re_max - center_re)
-        self.im_min = center_im - ratio*(center_im - self.im_min)
-        self.im_max = center_im + ratio*(self.im_max - center_im)
-
-        self.bounds_q.put((self.re_min, self.re_max, self.im_min, self.im_max))
-        self.update_status()
-        self.redraw()
+        self.go_to_location((center_re - ratio*(center_re - self.re_min),
+                             center_re + ratio*(self.re_max - center_re),
+                             center_im - ratio*(center_im - self.im_min),
+                             center_im + ratio*(self.im_max - center_im)))
 
     # Re-paint the window surface (without rendering anew)
     def refresh(self):
@@ -186,23 +195,55 @@ if __name__ == "__main__":
     status_bar = tk.Label(root, bd=1, relief=tk.SUNKEN, anchor=tk.W, height=1, textvariable=status)
     status_bar.pack(fill=tk.X)
 
+    def help_handler(_=None):
+        status.set('Drag to move; scroll to zoom')
+
+    def save_location_handler():
+        location = str(viewport.location())
+        if tkmb.askyesno(title="Save location", message=location + ": Copy to clipboard?"):
+            root.clipboard_clear()
+            root.clipboard_append(location)
+
+    def go_to_location_handler():
+        try:
+            location = root.clipboard_get()
+            location_tuple = ast.literal_eval(location)
+            if (not isinstance(location_tuple, tuple)) or (len(location_tuple) != 4):
+                raise ValueError
+            for value in location_tuple:
+                if not isinstance(value, numbers.Real):
+                    print(value)
+                    raise ValueError
+        except (ValueError, SyntaxError) as e:
+            tkmb.showerror(title="Invalid location", message="Clipboard must contain a location.")
+        else:
+            if tkmb.askyesno(title="Go to location", message="Go to " + location + "?"):
+                viewport.go_to_location(location_tuple)
+
+    def reset_zoom_handler():
+        viewport.go_to_location((-2, 2, -2, 2))
+
     file_menu = tk.Menu(menu_bar, tearoff=0)
     view_menu = tk.Menu(menu_bar, tearoff=0)
     help_menu = tk.Menu(menu_bar, tearoff=0)
     menu_bar.add_cascade(label='File', menu=file_menu)
     menu_bar.add_cascade(label='View', menu=view_menu)
-    #menu_bar.add_cascade(label='Help', menu=help_menu)
+    menu_bar.add_cascade(label='Help', menu=help_menu)
+    file_menu.add_command(label='Save location...', command=save_location_handler)
+    file_menu.add_command(label='Go to location...', command=go_to_location_handler)
+    file_menu.insert_separator(2)
     file_menu.add_command(label='Quit', accelerator='q', command=root.quit)
     view_menu.add_command(label='Redraw', accelerator='r', command=viewport.redraw)
     view_menu.insert_separator(1)
     view_menu.add_command(label='Zoom In', accelerator='+', command=viewport.zoom_in)
     view_menu.add_command(label='Zoom Out', accelerator='-', command=viewport.zoom_out)
-    #help_menu.add_command(label='Guide')
+    view_menu.add_command(label='Reset Zoom', command=reset_zoom_handler)
+    help_menu.add_command(label='Controls', accelerator='F1', command=help_handler)
     #help_menu.add_command(label='About')
 
     root.bind_all('q', lambda _: root.quit())
     root.bind_all('r', lambda _: viewport.redraw())
-    root.bind_all('<Key-F1>', lambda _: status.set('Drag to move; scroll to zoom'))
+    root.bind_all('<Key-F1>', help_handler)
     root.bind_all('<KP_Add>', lambda _: viewport.zoom_in())
     root.bind_all('<plus>', lambda _: viewport.zoom_in())
     root.bind_all('<KP_Subtract>', lambda _: viewport.zoom_out())

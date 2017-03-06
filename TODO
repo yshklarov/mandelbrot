@@ -1,4 +1,4 @@
-- File -> Copy location... (popup with 4 values as a tuple, "Copy to clipboard", "Close), Go to location...,
+- Override WM_DELETE_WINDOW: should quit gracefully
 - Multiprocessing for rendering (see cpu_count? process pool?)
 - Switch to ctr/zoom instead of four bounds; always keep 1:1 aspect ratio (by screen dimensions, not pixel count)
 - Arbitrary precision/zooming
