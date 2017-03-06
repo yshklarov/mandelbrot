@@ -6,7 +6,7 @@
 - Help->About
 - On zoom or resize, stretch old Surface instead of filling with black
 - Fix flickering/blackness due to frame getting redrawn during resize (maybe use a tk Canvas with an image instead of a pygame Surface)
-- Progressive rendering
+- Improve progressive rendering: both dimensions; and fill with squares and not lines (don't leave black space)
 - "Automatic" max iterations feature
 - Make color gradient dynamically configurable
 - Make a GPU implementation

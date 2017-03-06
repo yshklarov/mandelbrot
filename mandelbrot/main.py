@@ -10,14 +10,15 @@ import numbers
 import multiprocessing as mp
 import queue
 import threading
+from itertools import chain
 
 import mandelbrot
 
 PROGRAM_NAME = "Mandelbrot"
 WINDOW_WIDTH = 400
 WINDOW_HEIGHT = 418
-MAX_ITERATIONS = 150
-
+MAX_ITERATIONS = 300
+PASSES = 4
 
 class Viewport:    
 
@@ -160,7 +161,12 @@ class Viewport:
 
             self.canvas.fill((0, 0, 0), pygame.Rect(0, 0, self.width, self.height))
 
-            for x in range(0, self.width):
+            # Interleave rendering of columns, eg. for PASSES = 5:
+            # 0 16 32 ... 8 24 40 ... 4 12 20 ... 2 6 10 ... 1 3 5 ...
+            x_sequence = chain.from_iterable([range(0, self.width, 2**(PASSES-1))] +
+                                             [range(2**(k-1), self.width, 2**k) for k in range(PASSES-1, 0, -1)])
+
+            for x in x_sequence:
                 if self.stop_event.is_set() or self.quit_event.is_set():
                     break
                 re = self.re_min + ( (self.re_max - self.re_min) * x / self.width )
