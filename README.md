@@ -3,9 +3,11 @@ Mandelbrot
 
 This is a simple desktop tool for exploring the Mandelbrot set.
 
-Usage:
+Features:
+  * Multi-core rendering
 
-- Scroll to zoom in/out.
+Usage:
+  * Scroll to zoom in/out.
 
 Screenshot:
 

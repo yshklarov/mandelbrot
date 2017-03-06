@@ -1,4 +1,3 @@
-- Multiprocessing for rendering (see cpu_count? process pool?)
 - Switch to ctr/zoom instead of four bounds; always keep 1:1 aspect ratio (by screen dimensions, not pixel count)
 - Arbitrary precision/zooming
 - Iteration adjustment: View->Set Maximum Iterations...

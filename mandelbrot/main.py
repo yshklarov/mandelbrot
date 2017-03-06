@@ -12,13 +12,14 @@ import queue
 import threading
 from itertools import chain
 
-import mandelbrot
+import worker
 
 PROGRAM_NAME = "Mandelbrot"
 WINDOW_WIDTH = 400
 WINDOW_HEIGHT = 418
 MAX_ITERATIONS = 300
-PASSES = 4
+PASSES = 3
+WORKERS = 8
 
 class Viewport:    
 
@@ -40,7 +41,7 @@ class Viewport:
 
         self.status_callbacks = []
 
-        self.render_p = mp.Process(target=self.render, daemon=True, args=[window_id])
+        self.render_p = mp.Process(target=self.render, args=[window_id])
         self.render_p.start()
 
     def set_size(self, width, height):
@@ -142,39 +143,47 @@ class Viewport:
         threading.Thread(target=self.refresh_watchdog, daemon=True).start()
 
         while not self.quit_event.is_set():
-            self.render_event.wait()
-            self.render_event.clear()
-            self.stop_event.clear()
-
-            # Get new size if changed
-            try:
-                while True:
-                    self.width, self.height = self.size_q.get_nowait()
-            except queue.Empty as e: pass
-
-            # Get new bounds if changed
-            try:
-                while True:
-                    self.re_min, self.re_max, self.im_min, self.im_max = \
-                            self.bounds_q.get_nowait()
-            except queue.Empty as e: pass
-
-            self.canvas.fill((0, 0, 0), pygame.Rect(0, 0, self.width, self.height))
-
-            # Interleave rendering of columns, eg. for PASSES = 5:
-            # 0 16 32 ... 8 24 40 ... 4 12 20 ... 2 6 10 ... 1 3 5 ...
-            x_sequence = chain.from_iterable([range(0, self.width, 2**(PASSES-1))] +
-                                             [range(2**(k-1), self.width, 2**k) for k in range(PASSES-1, 0, -1)])
-
-            for x in x_sequence:
-                if self.stop_event.is_set() or self.quit_event.is_set():
+            with mp.Pool(processes=WORKERS) as pool:
+                self.render_event.wait()
+                if self.quit_event.is_set():
                     break
-                re = self.re_min + ( (self.re_max - self.re_min) * x / self.width )
-                for y in range(0, self.height):
-                    im = self.im_max - ( (self.im_max - self.im_min) * y / self.height )
-                    self.canvas.set_at((x, y), mandelbrot.point_color(
-                        re + im*1j, MAX_ITERATIONS))
-                pygame.display.update()
+                self.render_event.clear()
+                self.stop_event.clear()
+
+                # Get new size if changed
+                try:
+                    while True:
+                        self.width, self.height = self.size_q.get_nowait()
+                except queue.Empty as e: pass
+
+                # Get new bounds if changed
+                try:
+                    while True:
+                        self.re_min, self.re_max, self.im_min, self.im_max = \
+                                 self.bounds_q.get_nowait()
+                except queue.Empty as e: pass
+
+                self.canvas.fill((0, 0, 0), pygame.Rect(0, 0, self.width, self.height))
+
+                ims = [1j*(self.im_max - ( (self.im_max - self.im_min) * y / self.height ))
+                       for y in range(0, self.height)]
+                res = [(self.re_min + ( (self.re_max - self.re_min) * x / self.width ))
+                       for x in range(0, self.width)]
+
+                # Interleave rendering of columns, eg. for PASSES = 5:
+                # 0 16 32 ... 8 24 40 ... 4 12 20 ... 2 6 10 ... 1 3 5 ...
+                x_sequence = chain.from_iterable([range(0, self.width, 2**(PASSES-1))] +
+                        [range(2**(k-1), self.width, 2**k) for k in range(PASSES-1, 0, -1)])
+                work = [(x, range(0, self.height), res, ims) for x in x_sequence]
+                jobs = pool.imap_unordered(worker.worker(MAX_ITERATIONS), work)
+
+                for job in jobs:
+                    for (x, y, color) in job:
+                        self.canvas.set_at((x, y), color)
+                    pygame.display.update()
+                    if self.stop_event.is_set():
+                        pool.terminate()
+                        break
 
 
 def widget_size(widget):
