@@ -218,8 +218,11 @@ if __name__ == "__main__":
     status_bar = tk.Label(root, bd=1, relief=tk.SUNKEN, anchor=tk.W, height=1, textvariable=status)
     status_bar.pack(fill=tk.X)
 
-    def help_handler(_=None):
-        status.set('Drag to move; scroll to zoom')
+    def controls_handler(_=None):
+        tkmb.showinfo(title="Controls", message="Drag to move; scroll to zoom")
+
+    def about_handler(_=None):
+        tkmb.showinfo(title="Mandelbrot", message="Copyright (c) 2017 Yakov Shklarov")
 
     def save_location_handler():
         location = str(viewport.location())
@@ -261,12 +264,12 @@ if __name__ == "__main__":
     view_menu.add_command(label='Zoom In', accelerator='+', command=viewport.zoom_in)
     view_menu.add_command(label='Zoom Out', accelerator='-', command=viewport.zoom_out)
     view_menu.add_command(label='Reset Zoom', command=reset_zoom_handler)
-    help_menu.add_command(label='Controls', accelerator='F1', command=help_handler)
-    #help_menu.add_command(label='About')
+    help_menu.add_command(label='Controls', accelerator='F1', command=controls_handler)
+    help_menu.add_command(label='About', command=about_handler)
 
     root.bind_all('q', lambda _: root.quit())
     root.bind_all('r', lambda _: viewport.redraw())
-    root.bind_all('<Key-F1>', help_handler)
+    root.bind_all('<Key-F1>', controls_handler)
     root.bind_all('<KP_Add>', lambda _: viewport.zoom_in())
     root.bind_all('<plus>', lambda _: viewport.zoom_in())
     root.bind_all('<KP_Subtract>', lambda _: viewport.zoom_out())

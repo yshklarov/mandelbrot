@@ -1,11 +1,11 @@
+- Improve progressive rendering: both dimensions; and fill with squares and not lines (don't leave black space)
 - Viewport dragging (without redrawing the whole canvas)
 - Arbitrary precision/zooming
-- Always keep 1:1 aspect ratio (by screen dimensions, not pixel count)
 - Iteration adjustment: View->Set Maximum Iterations...
-- Help->About
+- Show cursor loc'n in status bar
+- Always keep 1:1 aspect ratio (by screen dimensions, not pixel count)
 - On zoom or resize, stretch old Surface instead of filling with black
 - Fix flickering/blackness due to frame getting redrawn during resize (maybe use a tk Canvas with an image instead of a pygame Surface)
-- Improve progressive rendering: both dimensions; and fill with squares and not lines (don't leave black space)
 - "Automatic" max iterations feature
 - Make color gradient dynamically configurable
 - Make a GPU implementation
