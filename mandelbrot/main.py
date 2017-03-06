@@ -192,6 +192,7 @@ if __name__ == "__main__":
     viewport = Viewport(embed.winfo_id())
 
     status = tk.StringVar()
+    viewport.register_status_callback(status.set)
     status_bar = tk.Label(root, bd=1, relief=tk.SUNKEN, anchor=tk.W, height=1, textvariable=status)
     status_bar.pack(fill=tk.X)
 
@@ -254,8 +255,7 @@ if __name__ == "__main__":
     # <Configure> gets called on widget resize
     embed.bind('<Configure>', lambda _: viewport.set_size(*widget_size(embed)))
     embed.bind('<Visibility>', lambda _: embed.after(1, viewport.refresh))
-
-    viewport.register_status_callback(status.set)
+    root.protocol('WM_DELETE_WINDOW', root.quit)
 
     root.mainloop()
 
