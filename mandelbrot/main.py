@@ -14,23 +14,29 @@ from itertools import chain
 
 import worker
 
+
 PROGRAM_NAME = "Mandelbrot"
 WINDOW_WIDTH = 400
 WINDOW_HEIGHT = 418
+
 MAX_ITERATIONS = 300
+RE_MIN = IM_MIN = -2
+RE_MAX = IM_MAX = 2
+
 PASSES = 3
 WORKERS = 8
+
 
 class Viewport:    
 
     # The window referenced by window_id must exist (eg. call root.update() in tkinter)
     def __init__(self, window_id):
         self.width, self.height = 0, 0
-        self.re_min, self.re_max = -2, 2
-        self.im_min, self.im_max = -2, 2
+        self.center = 0 + 0j
+        self.zoom = 1
 
         self.size_q = mp.Queue()
-        self.bounds_q = mp.Queue()
+        self.location_q = mp.Queue()
 
         self.render_event = mp.Event()
         self.refresh_event = mp.Event()
@@ -54,12 +60,12 @@ class Viewport:
         self.update_status()
 
     def location(self):
-        return (self.re_min, self.re_max,
-                self.im_min, self.im_max)
+        return (self.center, self.zoom)
 
-    def go_to_location(self, bounds):
-        self.re_min, self.re_max, self.im_min, self.im_max = bounds
-        self.bounds_q.put(bounds)
+    def go_to_location(self, center, zoom):
+        self.center = center
+        self.zoom = zoom
+        self.location_q.put((center, zoom))
         self.update_status()
         self.redraw()
 
@@ -71,11 +77,8 @@ class Viewport:
             cb(self.status_string())
 
     def status_string(self):
-        zoom = 4 / max(self.re_max - self.re_min,
-                       self.im_max - self.im_min)
-        return '{:.6f} + {:.6f}i; Zoom = {:.3g}; {}x{}'.format(
-            (self.re_min + self.re_max) / 2, (self.im_min + self.im_max) / 2,
-            zoom, self.width, self.height)
+        return '{:.8} + {:.8}i (Zoom = {:.3g})'.format(
+                self.center.real, self.center.imag, self.zoom)
 
     def zoom_in(self, x=None, y=None):
         self.dilate(0.5, x, y)
@@ -88,15 +91,22 @@ class Viewport:
             x = self.width // 2
         if y is None:
             y = self.height // 2
+        center_of_dilation = self.xy_to_complex(x, y)
+        new_center = center_of_dilation + (self.center - center_of_dilation)*ratio
+        self.go_to_location(new_center, self.zoom/ratio)
 
-        # Center of dilation
-        center_re = self.re_min + (x / self.width) * (self.re_max - self.re_min)
-        center_im = self.im_min + ((self.height - y) / self.height) * (self.im_max - self.im_min)
+    def xy_to_complex(self, x, y):
+        return self.xy_to_real(x, y) + 1j*self.xy_to_imag(x, y)
 
-        self.go_to_location((center_re - ratio*(center_re - self.re_min),
-                             center_re + ratio*(self.re_max - center_re),
-                             center_im - ratio*(center_im - self.im_min),
-                             center_im + ratio*(self.im_max - center_im)))
+    def xy_to_real(self, x, y):
+        x_rel = (x - self.width // 2) / self.width  # Between -0.5 and 0.5
+        real_part = self.center.real + (x_rel * (RE_MAX - RE_MIN) / self.zoom)
+        return real_part
+
+    def xy_to_imag(self, x, y):
+        y_rel = -(y - self.height // 2) / self.height  # Between -0.5 and 0.5
+        imag_part = self.center.imag + (y_rel * (IM_MAX - IM_MIN) / self.zoom)
+        return imag_part
 
     # Re-paint the window surface (without rendering anew)
     def refresh(self):
@@ -156,19 +166,16 @@ class Viewport:
                         self.width, self.height = self.size_q.get_nowait()
                 except queue.Empty as e: pass
 
-                # Get new bounds if changed
+                # Get new location if changed
                 try:
                     while True:
-                        self.re_min, self.re_max, self.im_min, self.im_max = \
-                                 self.bounds_q.get_nowait()
+                        self.center, self.zoom = self.location_q.get_nowait()
                 except queue.Empty as e: pass
 
                 self.canvas.fill((0, 0, 0), pygame.Rect(0, 0, self.width, self.height))
 
-                ims = [1j*(self.im_max - ( (self.im_max - self.im_min) * y / self.height ))
-                       for y in range(0, self.height)]
-                res = [(self.re_min + ( (self.re_max - self.re_min) * x / self.width ))
-                       for x in range(0, self.width)]
+                res = [self.xy_to_real(x, 0) for x in range(0, self.width)]
+                ims = [1j*self.xy_to_imag(0, y) for y in range(0, self.height)]
 
                 # Interleave rendering of columns, eg. for PASSES = 5:
                 # 0 16 32 ... 8 24 40 ... 4 12 20 ... 2 6 10 ... 1 3 5 ...
@@ -222,22 +229,22 @@ if __name__ == "__main__":
 
     def go_to_location_handler():
         try:
-            location = root.clipboard_get()
-            location_tuple = ast.literal_eval(location)
-            if (not isinstance(location_tuple, tuple)) or (len(location_tuple) != 4):
+            location = ast.literal_eval(root.clipboard_get())
+            if (not isinstance(location, tuple)) or (len(location) != 2):
                 raise ValueError
-            for value in location_tuple:
-                if not isinstance(value, numbers.Real):
-                    print(value)
-                    raise ValueError
+            (center, zoom) = location
+            if not isinstance(center, numbers.Complex) or \
+               not isinstance(zoom, numbers.Real):
+                raise ValueError
         except (ValueError, SyntaxError) as e:
             tkmb.showerror(title="Invalid location", message="Clipboard must contain a location.")
         else:
-            if tkmb.askyesno(title="Go to location", message="Go to " + location + "?"):
-                viewport.go_to_location(location_tuple)
+            if tkmb.askyesno(title="Go to location", message=
+                             "Go to {} (zoom {})?".format(center, zoom)):
+                viewport.go_to_location(center, zoom)
 
     def reset_zoom_handler():
-        viewport.go_to_location((-2, 2, -2, 2))
+        viewport.go_to_location(0+0j, 1)
 
     file_menu = tk.Menu(menu_bar, tearoff=0)
     view_menu = tk.Menu(menu_bar, tearoff=0)

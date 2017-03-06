@@ -1,7 +1,7 @@
-- Switch to ctr/zoom instead of four bounds; always keep 1:1 aspect ratio (by screen dimensions, not pixel count)
-- Arbitrary precision/zooming
-- Iteration adjustment: View->Set Maximum Iterations...
 - Viewport dragging (without redrawing the whole canvas)
+- Arbitrary precision/zooming
+- Always keep 1:1 aspect ratio (by screen dimensions, not pixel count)
+- Iteration adjustment: View->Set Maximum Iterations...
 - Help->About
 - On zoom or resize, stretch old Surface instead of filling with black
 - Fix flickering/blackness due to frame getting redrawn during resize (maybe use a tk Canvas with an image instead of a pygame Surface)
