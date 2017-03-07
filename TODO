@@ -1,14 +1,17 @@
-- Improve progressive rendering: both dimensions; and fill with squares and not lines (don't leave black space)
-- Viewport dragging (without redrawing the whole canvas)
-- Arbitrary precision/zooming
+- Switch to GTK+ (PyGObject) and GL
 - Iteration adjustment: View->Set Maximum Iterations...
-- Show cursor loc'n in status bar
+- Improve progressive rendering: both dimensions; and fill with squares and not lines (don't leave black space)
+- Don't redraw whole canvas when dragging viewport
+- "Automatic" max iterations feature (check if escaped at last iteration in more than 1% of screen)
+- Use C for worker/mandelbrot code
+  - eg. pass in: center pos'n, zoom level, relative position (two floats between -0.5 and +0.5). Returns: an integer (number of iterations).
+- Arbitrary precision/zooming (keep it fast: use machine precision for low zoom)
+- On zoom or resize, stretch old viewport instead of filling with black
+  - Move away from tkinter (since Frames get re-painted when resized): eg. use GTK
 - Always keep 1:1 aspect ratio (by screen dimensions, not pixel count)
-- On zoom or resize, stretch old Surface instead of filling with black
-- Fix flickering/blackness due to frame getting redrawn during resize (maybe use a tk Canvas with an image instead of a pygame Surface)
-- "Automatic" max iterations feature
+- Show cursor location in status bar
 - Make color gradient dynamically configurable
 - Make a GPU implementation
-- Resize Surface to fit frame (it should work if the window is larger than the physical display)
-- Formula editing: allow Julia sets
+- Formula editing: allow Julia sets, etc
 - Internal coloring
+- Antialiasing
