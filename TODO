@@ -1,3 +1,5 @@
+- Make it faster
+- Arbitrary precision/zooming (keep it fast: use machine precision for low zoom)
 - Nicer (continuous) panning when dragging
 - Don't redraw whole canvas when dragging viewport
 - On zoom/pan/resize, stretch old viewport instead of filling with black
@@ -5,8 +7,6 @@
 - "Automatic" max iterations feature (check if escaped at last iteration in more than 1% of screen)
 - Use C for worker/mandelbrot code
   - eg. pass in: center pos'n, zoom level, relative position (two floats between -0.5 and +0.5). Returns: an integer (number of iterations).
-- Arbitrary precision/zooming (keep it fast: use machine precision for low zoom)
-- Always keep 1:1 aspect ratio (by screen dimensions, not pixel count)
 - Show cursor location in status bar
 - Make color gradient dynamically configurable
 - Make a GPU implementation

@@ -8,11 +8,10 @@ import math
 import multiprocessing as mp
 import queue
 import threading
-from itertools import chain
 import functools
-
 import tkinter as tk
 import tkinter.messagebox as tkmb
+
 import pygame
 
 import worker
@@ -121,12 +120,18 @@ class Viewport:
 
     def xy_to_real(self, x, y):
         x_rel = (x - self.width // 2) / self.width  # Between -0.5 and 0.5
-        real_part = self.center.real + (x_rel * (RE_MAX - RE_MIN) / self.zoom)
+        # Keep aspect ratio at 1:1.
+        ratio = self.width / max(self.width, self.height)
+        real_offset = (x_rel * (RE_MAX - RE_MIN) / self.zoom) * ratio
+        real_part = self.center.real + real_offset
         return real_part
 
     def xy_to_imag(self, x, y):
         y_rel = -(y - self.height // 2) / self.height  # Between -0.5 and 0.5
-        imag_part = self.center.imag + (y_rel * (IM_MAX - IM_MIN) / self.zoom)
+        # Keep aspect ratio at 1:1.
+        ratio = self.height / max(self.width, self.height)
+        imag_offset = (y_rel * (IM_MAX - IM_MIN) / self.zoom) * ratio
+        imag_part = self.center.imag + imag_offset
         return imag_part
 
     # Re-paint the window surface (without rendering anew)
