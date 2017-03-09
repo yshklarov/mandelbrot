@@ -8,8 +8,11 @@ Features:
   * Multi-pass (progressive) rendering
   * Smooth coloring
 
-Usage: Scroll to zoom, drag to pan.
-
-Screenshot:
-
 ![screenshot](docs/screenshot.jpg)
+
+Usage
+  * Scroll to zoom, drag to pan.
+
+Requirements:
+  * Python 3
+  * Pygame
