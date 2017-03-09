@@ -22,7 +22,7 @@ PROGRAM_NAME = "Mandelbrot"
 WINDOW_WIDTH = 400
 WINDOW_HEIGHT = 418
 
-MAX_ITERATIONS = 500
+INIT_MAX_ITERATIONS = 500
 RE_MIN = IM_MIN = -2
 RE_MAX = IM_MAX = 2
 
@@ -38,6 +38,7 @@ class Viewport:
         self.width, self.height = 0, 0
         self.center = 0 + 0j
         self.zoom = 1
+        self.iterations = INIT_MAX_ITERATIONS
 
         self.size_q = mp.Queue()
         self.location_q = mp.Queue()
@@ -199,7 +200,7 @@ class Viewport:
                     pitch = PASS_FACTOR**i
                     work += [(x, range(0, self.height + pitch // 2 - 1, pitch), res, ims, pitch)
                             for x in range(0, self.width + pitch // 2 - 1, pitch)]
-                jobs = pool.imap_unordered(worker.worker(MAX_ITERATIONS), work)
+                jobs = pool.imap_unordered(worker.worker(self.iterations), work)
 
                 for job in jobs:
                     for (x, y, iterations_to_escape, pitch) in job:
@@ -210,9 +211,9 @@ class Viewport:
                         pool.terminate()
                         break
 
-    @functools.lru_cache(maxsize=MAX_ITERATIONS+1)
+    @functools.lru_cache(maxsize=5000)
     def colormap(self, n):
-        if n > MAX_ITERATIONS:
+        if n > self.iterations:
             return (0, 0, 0)
         r = math.floor(self.triangle(n, 30) * 255)
         g = math.floor(self.triangle(n, 100) * 255)

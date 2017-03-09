@@ -1,11 +1,12 @@
 - Iteration adjustment: View->Set Maximum Iterations...
+- Nicer (continuous) panning when dragging
+- On zoom/pan/resize, stretch old viewport instead of filling with black
+  - Maybe move away from tkinter (since Frames get re-painted when resized)
 - Don't redraw whole canvas when dragging viewport
 - "Automatic" max iterations feature (check if escaped at last iteration in more than 1% of screen)
 - Use C for worker/mandelbrot code
   - eg. pass in: center pos'n, zoom level, relative position (two floats between -0.5 and +0.5). Returns: an integer (number of iterations).
 - Arbitrary precision/zooming (keep it fast: use machine precision for low zoom)
-- On zoom or resize, stretch old viewport instead of filling with black
-  - Move away from tkinter (since Frames get re-painted when resized): eg. use GTK
 - Always keep 1:1 aspect ratio (by screen dimensions, not pixel count)
 - Show cursor location in status bar
 - Make color gradient dynamically configurable
