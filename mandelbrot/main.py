@@ -26,8 +26,7 @@ INIT_MAX_ITERATIONS = 500
 RE_MIN = IM_MIN = -2
 RE_MAX = IM_MAX = 2
 
-PASSES = 5
-PASS_FACTOR = 3
+PASSES = 6
 WORKERS = 8
 
 
@@ -38,10 +37,11 @@ class Viewport:
         self.width, self.height = 0, 0
         self.center = 0 + 0j
         self.zoom = 1
-        self.iterations = INIT_MAX_ITERATIONS
+        self.max_iterations = INIT_MAX_ITERATIONS
 
         self.size_q = mp.Queue()
         self.location_q = mp.Queue()
+        self.max_iterations_q = mp.Queue()
 
         self.render_event = mp.Event()
         self.refresh_event = mp.Event()
@@ -74,6 +74,13 @@ class Viewport:
             self.stop_event.set()
             self.redraw_delayed(0)
         self.update_status()
+
+    def set_max_iterations(self, max_iterations):
+        if (self.max_iterations != max_iterations
+                and max_iterations >= 0):
+            self.max_iterations = max_iterations
+            self.max_iterations_q.put(max_iterations)
+            self.redraw()
 
     def location(self):
         return (self.center, self.zoom)
@@ -186,9 +193,15 @@ class Viewport:
                         self.center, self.zoom = self.location_q.get_nowait()
                 except queue.Empty as e: pass
 
+                # Get new max_iterations if changed
+                try:
+                    while True:
+                        self.max_iterations = self.max_iterations_q.get_nowait()
+                except queue.Empty as e: pass
+
                 self.canvas.fill((0, 0, 0), pygame.Rect(0, 0, self.width, self.height))
 
-                max_pitch = PASS_FACTOR**(PASSES-1)
+                max_pitch = 2**(PASSES-1)
                 res = [self.xy_to_real(x, 0)
                        for x in range(0, self.width + max_pitch // 2 - 1)]
                 ims = [1j*self.xy_to_imag(0, y)
@@ -197,10 +210,10 @@ class Viewport:
                 # TODO Don't waste passes, ie. don't re-render.
                 work = []
                 for i in reversed(range(0, PASSES)):
-                    pitch = PASS_FACTOR**i
+                    pitch = 2**i
                     work += [(x, range(0, self.height + pitch // 2 - 1, pitch), res, ims, pitch)
                             for x in range(0, self.width + pitch // 2 - 1, pitch)]
-                jobs = pool.imap_unordered(worker.worker(self.iterations), work)
+                jobs = pool.imap_unordered(worker.worker(self.max_iterations), work)
 
                 for job in jobs:
                     for (x, y, iterations_to_escape, pitch) in job:
@@ -213,7 +226,7 @@ class Viewport:
 
     @functools.lru_cache(maxsize=5000)
     def colormap(self, n):
-        if n > self.iterations:
+        if n > self.max_iterations:
             return (0, 0, 0)
         r = math.floor(self.triangle(n, 30) * 255)
         g = math.floor(self.triangle(n, 100) * 255)
@@ -259,8 +272,31 @@ def go_to_location_handler(viewport):
 def reset_zoom_handler(viewport):
     viewport.go_to_location(0+0j, 1)
 
+def set_iterations_handler(root, viewport):
+    dialog = tk.Toplevel(root)
+    dialog.title("Set iterations")
+    #dialog.transient(root)
+    dialog.resizable(False, False)
+    tk.Label(dialog, text="Maximum iterations:").grid(row=0, column=0, sticky='e')
+    # TODO validate input; use tk variable
+    entry_box = tk.Entry(dialog, width=6, text="foo")
+    entry_box.grid(row=0, column=1, padx=2, pady=2, sticky='we')
+    entry_box.delete(0, len(entry_box.get()))
+    entry_box.insert(0, viewport.max_iterations)
+    dialog.focus_set()
+    def set_max_iterations():
+        viewport.set_max_iterations(int(entry_box.get()))
+    def close_dialog():
+        dialog.destroy()
+    tk.Button(dialog, text="Set", underline=0, command=set_max_iterations).grid(
+        row=0, column=2, sticky='e' + 'w', padx=2, pady=2)
+    tk.Button(dialog, text="Close", underline=0, command=close_dialog).grid(
+        row=0, column=3, sticky='e' + 'w', padx=2, pady=2)
+    dialog.protocol('WM_DELETE_WINDOW', close_dialog)
+
 
 if __name__ == "__main__":
+    # TODO Fix bugs when start method is not spawn
     mp.set_start_method('spawn')
 
     root = tk.Tk()
@@ -287,18 +323,24 @@ if __name__ == "__main__":
     menu_bar.add_cascade(label='File', menu=file_menu)
     menu_bar.add_cascade(label='View', menu=view_menu)
     menu_bar.add_cascade(label='Help', menu=help_menu)
+
     file_menu.add_command(label='Save location...', command=
                           functools.partial(save_location_handler, root))
     file_menu.add_command(label='Go to location...', command=
                           functools.partial(go_to_location_handler, viewport))
     file_menu.insert_separator(2)
     file_menu.add_command(label='Quit', accelerator='q', command=root.quit)
-    view_menu.add_command(label='Redraw', accelerator='r', command=viewport.redraw)
-    view_menu.insert_separator(1)
+
     view_menu.add_command(label='Zoom In', accelerator='+', command=viewport.zoom_in)
     view_menu.add_command(label='Zoom Out', accelerator='-', command=viewport.zoom_out)
     view_menu.add_command(label='Reset Zoom', command=
                           functools.partial(reset_zoom_handler, viewport))
+    view_menu.insert_separator(3)
+    view_menu.add_command(label='Redraw', accelerator='r', command=viewport.redraw)
+    view_menu.insert_separator(5)
+    view_menu.add_command(label='Set iterations...', command=
+                          functools.partial(set_iterations_handler, root, viewport))
+
     help_menu.add_command(label='Controls', accelerator='F1', command=controls_handler)
     help_menu.add_command(label='About', command=about_handler)
 
