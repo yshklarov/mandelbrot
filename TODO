@@ -1,6 +1,4 @@
-- Switch to GTK+ (PyGObject) and GL
 - Iteration adjustment: View->Set Maximum Iterations...
-- Improve progressive rendering: both dimensions; and fill with squares and not lines (don't leave black space)
 - Don't redraw whole canvas when dragging viewport
 - "Automatic" max iterations feature (check if escaped at last iteration in more than 1% of screen)
 - Use C for worker/mandelbrot code

@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 
-import tkinter as tk
-import tkinter.messagebox as tkmb
-import pygame
 import os
 import sys
 import ast
 import numbers
+import math
 import multiprocessing as mp
 import queue
 import threading
 from itertools import chain
 import functools
+
+import tkinter as tk
+import tkinter.messagebox as tkmb
+import pygame
 
 import worker
 
@@ -20,11 +22,12 @@ PROGRAM_NAME = "Mandelbrot"
 WINDOW_WIDTH = 400
 WINDOW_HEIGHT = 418
 
-MAX_ITERATIONS = 300
+MAX_ITERATIONS = 500
 RE_MIN = IM_MIN = -2
 RE_MAX = IM_MAX = 2
 
-PASSES = 3
+PASSES = 5
+PASS_FACTOR = 3
 WORKERS = 8
 
 
@@ -184,23 +187,41 @@ class Viewport:
 
                 self.canvas.fill((0, 0, 0), pygame.Rect(0, 0, self.width, self.height))
 
-                res = [self.xy_to_real(x, 0) for x in range(0, self.width)]
-                ims = [1j*self.xy_to_imag(0, y) for y in range(0, self.height)]
+                max_pitch = PASS_FACTOR**(PASSES-1)
+                res = [self.xy_to_real(x, 0)
+                       for x in range(0, self.width + max_pitch // 2 - 1)]
+                ims = [1j*self.xy_to_imag(0, y)
+                       for y in range(0, self.height + max_pitch // 2 - 1)]
 
-                # Interleave rendering of columns, eg. for PASSES = 5:
-                # 0 16 32 ... 8 24 40 ... 4 12 20 ... 2 6 10 ... 1 3 5 ...
-                x_sequence = chain.from_iterable([range(0, self.width, 2**(PASSES-1))] +
-                        [range(2**(k-1), self.width, 2**k) for k in range(PASSES-1, 0, -1)])
-                work = [(x, range(0, self.height), res, ims) for x in x_sequence]
+                # TODO Don't waste passes, ie. don't re-render.
+                work = []
+                for i in reversed(range(0, PASSES)):
+                    pitch = PASS_FACTOR**i
+                    work += [(x, range(0, self.height + pitch // 2 - 1, pitch), res, ims, pitch)
+                            for x in range(0, self.width + pitch // 2 - 1, pitch)]
                 jobs = pool.imap_unordered(worker.worker(MAX_ITERATIONS), work)
 
                 for job in jobs:
-                    for (x, y, color) in job:
-                        self.canvas.set_at((x, y), color)
+                    for (x, y, iterations_to_escape, pitch) in job:
+                        rect = (x - pitch // 2, y - pitch // 2, pitch, pitch)
+                        self.canvas.fill(self.colormap(iterations_to_escape), rect)
                     pygame.display.update()
                     if self.stop_event.is_set():
                         pool.terminate()
                         break
+
+    @functools.lru_cache(maxsize=MAX_ITERATIONS+1)
+    def colormap(self, n):
+        if n > MAX_ITERATIONS:
+            return (0, 0, 0)
+        r = math.floor(self.triangle(n, 30) * 255)
+        g = math.floor(self.triangle(n, 100) * 255)
+        b = math.floor(self.triangle(n, 400) * 255)
+        return (r, g, b)
+
+    # Triangle wave with range from 0 to 1 and given period
+    def triangle(self, x, period):
+        return 2 * abs(x/period - round(x/period))
 
 
 def widget_size(widget):
