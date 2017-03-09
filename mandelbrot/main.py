@@ -201,7 +201,7 @@ class Viewport:
 
                 self.canvas.fill((0, 0, 0), pygame.Rect(0, 0, self.width, self.height))
 
-                max_pitch = 2**(PASSES-1)
+                max_pitch = 2 ** (PASSES - 1)
                 res = [self.xy_to_real(x, 0)
                        for x in range(0, self.width + max_pitch // 2 - 1)]
                 ims = [1j*self.xy_to_imag(0, y)
@@ -209,10 +209,21 @@ class Viewport:
 
                 # TODO Don't waste passes, ie. don't re-render.
                 work = []
-                for i in reversed(range(0, PASSES)):
-                    pitch = 2**i
-                    work += [(x, range(0, self.height + pitch // 2 - 1, pitch), res, ims, pitch)
-                            for x in range(0, self.width + pitch // 2 - 1, pitch)]
+                for i in range(0, PASSES):
+                    pitch = 2 ** (PASSES - i - 1)
+                    for x in range(0, self.width + pitch // 2 - 1, pitch):
+                        # Don't repeat work that's been done on a previous pass.
+                        y_first = 0
+                        y_pitch = pitch
+                        if i > 0:
+                            if x % (pitch * 2) == 0:
+                                y_first = y_pitch
+                                y_pitch *= 2
+                        work.append((x,
+                                     range(y_first, self.height + pitch // 2 - 1, y_pitch),
+                                     res,
+                                     ims,
+                                     pitch))
                 jobs = pool.imap_unordered(worker.worker(self.max_iterations), work)
 
                 for job in jobs:

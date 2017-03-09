@@ -4,7 +4,8 @@ Mandelbrot
 This is a simple desktop tool for exploring the Mandelbrot set.
 
 Features:
-  * Parallel (multi-core) rendering
+  * Parallel rendering
+  * Multi-pass (progressive) rendering
   * Smooth coloring
 
 Usage: Scroll to zoom, drag to pan.
