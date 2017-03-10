@@ -1,1 +1,2 @@
+mpmath==0.19
 pygame==1.9.3

@@ -1,9 +1,8 @@
-- Make it faster
-- Arbitrary precision/zooming (keep it fast: use machine precision for low zoom)
 - Nicer (continuous) panning when dragging
 - Don't redraw whole canvas when dragging viewport
 - On zoom/pan/resize, stretch old viewport instead of filling with black
   - Maybe move away from tkinter (since Frames get re-painted when resized)
+- Show rendering progress bar
 - "Automatic" max iterations feature (check if escaped at last iteration in more than 1% of screen)
 - Use C for worker/mandelbrot code
   - eg. pass in: center pos'n, zoom level, relative position (two floats between -0.5 and +0.5). Returns: an integer (number of iterations).

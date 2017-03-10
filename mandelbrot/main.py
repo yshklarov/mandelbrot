@@ -2,10 +2,9 @@
 
 import os
 import sys
-import ast
 import numbers
 import math
-import multiprocessing as mp
+import multiprocessing
 import queue
 import threading
 import functools
@@ -13,6 +12,8 @@ import tkinter as tk
 import tkinter.messagebox as tkmb
 
 import pygame
+import mpmath
+from mpmath import mp, mpc
 
 import worker
 
@@ -21,37 +22,47 @@ PROGRAM_NAME = "Mandelbrot"
 WINDOW_WIDTH = 400
 WINDOW_HEIGHT = 418
 
-INIT_MAX_ITERATIONS = 500
+DEFAULT_MAX_ITERATIONS = 500
 RE_MIN = IM_MIN = -2
 RE_MAX = IM_MAX = 2
 
-PASSES = 6
 WORKERS = 8
+
+# Set the number of passes for progressive rendering. Keep this number fairly low to avoid flicker.
+PASSES = 6
+
+# This is quite slow, but it's required if you'd like to zoom further than (10^12)x or so.
+# Precision is not actually arbitrary during runtime but can be increased in 'mandelbrot.py'.
+ARBITRARY_PRECISION = False
+worker.set_arbitrary_precision(ARBITRARY_PRECISION)
 
 
 class Viewport:    
 
-    # The window referenced by window_id must exist (eg. call root.update() in tkinter)
     def __init__(self, window_id):
+        # The window referenced by window_id must exist (eg. call root.update() in tkinter)
         self.width, self.height = 0, 0
-        self.center = 0 + 0j
+        if ARBITRARY_PRECISION:
+            self.center = mp.mpc(0)
+        else:
+            self.center = 0
         self.zoom = 1
-        self.max_iterations = INIT_MAX_ITERATIONS
+        self.max_iterations = DEFAULT_MAX_ITERATIONS
 
-        self.size_q = mp.Queue()
-        self.location_q = mp.Queue()
-        self.max_iterations_q = mp.Queue()
+        self.size_q = multiprocessing.Queue()
+        self.location_q = multiprocessing.Queue()
+        self.max_iterations_q = multiprocessing.Queue()
 
-        self.render_event = mp.Event()
-        self.refresh_event = mp.Event()
-        self.redraw_q = mp.Queue()
+        self.render_event = multiprocessing.Event()
+        self.refresh_event = multiprocessing.Event()
+        self.redraw_q = multiprocessing.Queue()
         self.redraw_scheduled = False
-        self.stop_event = mp.Event()
-        self.quit_event = mp.Event()
+        self.stop_event = multiprocessing.Event()
+        self.quit_event = multiprocessing.Event()
 
         self.status_callbacks = []
 
-        self.render_p = mp.Process(target=self.render, args=[window_id])
+        self.render_p = multiprocessing.Process(target=self.render, args=[window_id])
         self.render_p.start()
 
     def register_status_callback(self, cb):
@@ -63,7 +74,7 @@ class Viewport:
 
     def status_string(self):
         return '{:.8} + {:.8}i (Zoom = {:.3g})'.format(
-                self.center.real, self.center.imag, self.zoom)
+                float(self.center.real), float(self.center.imag), self.zoom)
 
     def set_size(self, width, height):
         if (self.width, self.height) != (width, height):
@@ -116,26 +127,20 @@ class Viewport:
         self.go_to_location(new_center, self.zoom/ratio)
 
     def xy_to_complex(self, x, y):
-        return self.xy_to_real(x, y) + 1j*self.xy_to_imag(x, y)
-
-    def xy_to_real(self, x, y):
-        x_rel = (x - self.width // 2) / self.width  # Between -0.5 and 0.5
+        x_rel = (x - self.width // 2)
+        y_rel = -(y - self.height // 2)
         # Keep aspect ratio at 1:1.
-        ratio = self.width / max(self.width, self.height)
-        real_offset = (x_rel * (RE_MAX - RE_MIN) / self.zoom) * ratio
-        real_part = self.center.real + real_offset
-        return real_part
+        size = max(self.width, self.height)
+        if ARBITRARY_PRECISION:
+            offset = mp.mpc(x_rel * (RE_MAX - RE_MIN),
+                            y_rel * (IM_MAX - IM_MIN)) / (self.zoom * size)
+        else:
+            offset = ((x_rel * (RE_MAX - RE_MIN))
+                    + 1j*(y_rel * (IM_MAX - IM_MIN))) / (self.zoom * size)
+        return self.center + offset
 
-    def xy_to_imag(self, x, y):
-        y_rel = -(y - self.height // 2) / self.height  # Between -0.5 and 0.5
-        # Keep aspect ratio at 1:1.
-        ratio = self.height / max(self.width, self.height)
-        imag_offset = (y_rel * (IM_MAX - IM_MIN) / self.zoom) * ratio
-        imag_part = self.center.imag + imag_offset
-        return imag_part
-
-    # Re-paint the window surface (without rendering anew)
     def refresh(self):
+        # Re-paint the window surface (without rendering anew.)
         self.refresh_event.set()
 
     def refresh_watchdog(self):
@@ -143,15 +148,15 @@ class Viewport:
             self.refresh_event.clear()
             pygame.display.update()
 
-    # Clean up child processes
     def close(self):
+        # Clean up all child processes.
         self.quit_event.set()
         self.stop_event.set()
         self.render_event.set()  # Release block in render()
 
-    # Call redraw() after the given delay (in seconds). Repeat calls reset the delay to
-    # the new value. Do not block.
     def redraw_delayed(self, delay):
+        # Call redraw() after the given delay (in seconds). Repeat calls reset the delay to
+        # the new value. Do not block.
         if not self.redraw_scheduled:
             def wait(delay):
                 while True:
@@ -167,8 +172,8 @@ class Viewport:
         else:
             self.redraw_q.put(delay)
 
-    # Re-render immediately. Block until rendering has begun anew.
     def redraw(self):
+        # Re-render immediately. Block until rendering has begun anew.
         self.stop_event.set()
         self.render_event.set()
 
@@ -179,7 +184,7 @@ class Viewport:
         threading.Thread(target=self.refresh_watchdog, daemon=True).start()
 
         while not self.quit_event.is_set():
-            with mp.Pool(processes=WORKERS) as pool:
+            with multiprocessing.Pool(processes=WORKERS) as pool:
                 self.render_event.wait()
                 if self.quit_event.is_set():
                     break
@@ -207,12 +212,11 @@ class Viewport:
                 self.canvas.fill((0, 0, 0), pygame.Rect(0, 0, self.width, self.height))
 
                 max_pitch = 2 ** (PASSES - 1)
-                res = [self.xy_to_real(x, 0)
+                res = [self.xy_to_complex(x, 0).real
                        for x in range(0, self.width + max_pitch // 2 - 1)]
-                ims = [1j*self.xy_to_imag(0, y)
+                ims = [1j*self.xy_to_complex(0, y).imag
                        for y in range(0, self.height + max_pitch // 2 - 1)]
 
-                # TODO Don't waste passes, ie. don't re-render.
                 work = []
                 for i in range(0, PASSES):
                     pitch = 2 ** (PASSES - i - 1)
@@ -240,17 +244,18 @@ class Viewport:
                         pool.terminate()
                         break
 
-    @functools.lru_cache(maxsize=5000)
+    # Memoizing isn't useful with color smoothing since n is not an integer.
+    #@functools.lru_cache(maxsize=5000)
     def colormap(self, n):
         if n > self.max_iterations:
             return (0, 0, 0)
-        r = math.floor(self.triangle(n, 30) * 255)
-        g = math.floor(self.triangle(n, 100) * 255)
-        b = math.floor(self.triangle(n, 400) * 255)
+        r = math.floor(self.triangle_wave(n, 30) * 255)
+        g = math.floor(self.triangle_wave(n, 100) * 255)
+        b = math.floor(self.triangle_wave(n, 400) * 255)
         return (r, g, b)
 
-    # Triangle wave with range from 0 to 1 and given period
-    def triangle(self, x, period):
+    def triangle_wave(self, x, period):
+        # Triangle wave with range from 0 to 1.
         return 2 * abs(x/period - round(x/period))
 
 
@@ -271,14 +276,15 @@ def save_location_handler(root):
 
 def go_to_location_handler(viewport):
     try:
-        location = ast.literal_eval(root.clipboard_get())
+        # TODO dangerous! But for now it must work with the mpc type.
+        location = eval(root.clipboard_get())
         if (not isinstance(location, tuple)) or (len(location) != 2):
             raise ValueError
         (center, zoom) = location
-        if not isinstance(center, numbers.Complex) or \
-           not isinstance(zoom, numbers.Real):
+        if not (isinstance(center, mpmath.mpc) or isinstance(center, numbers.Complex)) \
+           or not isinstance(zoom, numbers.Real):
             raise ValueError
-    except (ValueError, SyntaxError) as e:
+    except (ValueError, SyntaxError, tk.TclError) as e:
         tkmb.showerror(title="Invalid location", message="Clipboard must contain a location.")
     else:
         if tkmb.askyesno(title="Go to location", message=
@@ -313,7 +319,7 @@ def set_iterations_handler(root, viewport):
 
 if __name__ == "__main__":
     # TODO Fix bugs when start method is not spawn
-    mp.set_start_method('spawn')
+    multiprocessing.set_start_method('spawn')
 
     root = tk.Tk()
     root.title(PROGRAM_NAME)
