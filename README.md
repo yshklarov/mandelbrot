@@ -11,7 +11,14 @@ Features
   * Multi-pass (progressive) rendering
   * Smooth coloring
 
-![screenshot](docs/screenshot.jpg)
+Screenshots
+-----------
+
+![screenshot 1](docs/screenshot-1.jpg)
+
+![screenshot 2](docs/screenshot-2.jpg)
+
+![screenshot 3](docs/screenshot-3.jpg)
 
 Usage
 -----
