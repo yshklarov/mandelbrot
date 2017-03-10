@@ -4,13 +4,14 @@ from mpmath import mp
 
 
 ESCAPE_RADIUS = 10**100
-ESCAPE_MAGNITUDE = math.log(ESCAPE_RADIUS)
+ESCAPE_MAGNITUDE = math.log2(ESCAPE_RADIUS)
 
 # Decimal places of precision. The default is 15, corresponding to standard double precision (53
 # binary digits. To be able to use 10^k times zoom, set this to at least k + 4.
 mp.dps = 54
 
 
+# TODO Speed up this function. It is the bottleneck by a long shot.
 def iterations_to_escape_ap(c, max_iterations=100):
     """ Calculate the number of iterations to escape the mandelbrot set.
 
@@ -30,7 +31,7 @@ def iterations_to_escape_ap(c, max_iterations=100):
         adjustment = 1 - mp.log(inner_log, b=2)
     else:
         adjustment = 0
-    return iterations + adjustment
+    return float(iterations + adjustment)
 
 
 def iterations_to_escape(c, max_iterations=100):
@@ -47,7 +48,7 @@ def iterations_to_escape(c, max_iterations=100):
             break
         z = z**2 + c
     try:
-        adjustment = 1 - math.log2(math.log(abs(z))/math.log(ESCAPE_RADIUS))
+        adjustment = 1 - math.log2(math.log(abs(z) / ESCAPE_MAGNITUDE))
     except ValueError:
         adjustment = 0
     return iterations + adjustment

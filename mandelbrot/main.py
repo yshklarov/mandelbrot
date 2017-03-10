@@ -23,6 +23,7 @@ WINDOW_WIDTH = 400
 WINDOW_HEIGHT = 418
 
 DEFAULT_MAX_ITERATIONS = 500
+DEFAULT_ARBITRARY_PRECISION = False
 RE_MIN = IM_MIN = -2
 RE_MAX = IM_MAX = 2
 
@@ -31,24 +32,20 @@ WORKERS = 8
 # Set the number of passes for progressive rendering. Keep this number fairly low to avoid flicker.
 PASSES = 6
 
-# This is quite slow, but it's required if you'd like to zoom further than (10^12)x or so.
-# Precision is not actually arbitrary during runtime but can be increased in 'mandelbrot.py'.
-ARBITRARY_PRECISION = False
-worker.set_arbitrary_precision(ARBITRARY_PRECISION)
-
 
 class Viewport:    
 
     def __init__(self, window_id):
         # The window referenced by window_id must exist (eg. call root.update() in tkinter)
-        self.width, self.height = 0, 0
-        if ARBITRARY_PRECISION:
-            self.center = mp.mpc(0)
-        else:
-            self.center = 0
+        self.width, self.height = (0, 0)
+        self.center = 0
         self.zoom = 1
         self.max_iterations = DEFAULT_MAX_ITERATIONS
+        self.arbitrary_precision = None
+        self.arbitrary_precision_q = multiprocessing.Queue()
+        self.set_arbitrary_precision(DEFAULT_ARBITRARY_PRECISION)
 
+        # TODO Don't use queues like this: they all create race conditions.
         self.size_q = multiprocessing.Queue()
         self.location_q = multiprocessing.Queue()
         self.max_iterations_q = multiprocessing.Queue()
@@ -82,7 +79,7 @@ class Viewport:
             self.height = height
             self.size_q.put((self.width, self.height))
             self.stop_event.set()
-            self.redraw_delayed(0)
+            self.redraw_delayed(0.01)
         self.update_status()
 
     def set_max_iterations(self, max_iterations):
@@ -91,6 +88,22 @@ class Viewport:
             self.max_iterations = max_iterations
             self.max_iterations_q.put(max_iterations)
             self.redraw()
+
+    def set_arbitrary_precision(self, arbitrary_precision):
+        """ arbitrary_precision: bool """
+        # Precision is not actually arbitrary during runtime but can be increased in
+        # 'mandelbrot.py'.
+        if self.arbitrary_precision == arbitrary_precision:
+            return
+        self.arbitrary_precision = arbitrary_precision
+        if arbitrary_precision:
+            self._complex = mp.mpc
+            self.center = mp.mpc(self.center)
+        else:
+            self._complex = complex
+            self.center = complex(self.center)
+        # TODO Transfer self._complex tosubprocess, too. (or is it unnecessary?)
+        self.arbitrary_precision_q.put(arbitrary_precision)
 
     def location(self):
         return (self.center, self.zoom)
@@ -131,12 +144,8 @@ class Viewport:
         y_rel = -(y - self.height // 2)
         # Keep aspect ratio at 1:1.
         size = max(self.width, self.height)
-        if ARBITRARY_PRECISION:
-            offset = mp.mpc(x_rel * (RE_MAX - RE_MIN),
-                            y_rel * (IM_MAX - IM_MIN)) / (self.zoom * size)
-        else:
-            offset = ((x_rel * (RE_MAX - RE_MIN))
-                    + 1j*(y_rel * (IM_MAX - IM_MIN))) / (self.zoom * size)
+        offset = self._complex(x_rel * (RE_MAX - RE_MIN),
+                               y_rel * (IM_MAX - IM_MIN)) / (self.zoom * size)
         return self.center + offset
 
     def refresh(self):
@@ -173,7 +182,7 @@ class Viewport:
             self.redraw_q.put(delay)
 
     def redraw(self):
-        # Re-render immediately. Block until rendering has begun anew.
+        # Re-render immediately.
         self.stop_event.set()
         self.render_event.set()
 
@@ -191,23 +200,27 @@ class Viewport:
                 self.render_event.clear()
                 self.stop_event.clear()
 
-                # Get new size if changed
+                # Get new instance variables, if changed
                 try:
                     while True:
                         self.width, self.height = self.size_q.get_nowait()
                 except queue.Empty as e: pass
 
-                # Get new location if changed
                 try:
                     while True:
                         self.center, self.zoom = self.location_q.get_nowait()
                 except queue.Empty as e: pass
 
-                # Get new max_iterations if changed
                 try:
                     while True:
                         self.max_iterations = self.max_iterations_q.get_nowait()
                 except queue.Empty as e: pass
+
+                try:
+                    while True:
+                        self.arbitrary_precision = self.arbitrary_precision_q.get_nowait()
+                except queue.Empty as e: pass
+
 
                 self.canvas.fill((0, 0, 0), pygame.Rect(0, 0, self.width, self.height))
 
@@ -233,7 +246,11 @@ class Viewport:
                                      res,
                                      ims,
                                      pitch))
-                jobs = pool.imap_unordered(worker.worker(self.max_iterations), work)
+                # Do not use imap_unordered here: it might cause earlier passes to overwrite later
+                # ones. And besides: It looks glitchy.
+                jobs = pool.imap(worker.worker(self.max_iterations,
+                                                         self.arbitrary_precision),
+                                           work)
 
                 for job in jobs:
                     for (x, y, iterations_to_escape, pitch) in job:
@@ -276,7 +293,7 @@ def save_location_handler(root):
 
 def go_to_location_handler(viewport):
     try:
-        # TODO dangerous! But for now it must work with the mpc type.
+        # TODO Parse, don't eval. But for now it must work with the mpc type.
         location = eval(root.clipboard_get())
         if (not isinstance(location, tuple)) or (len(location) != 2):
             raise ValueError
@@ -316,6 +333,11 @@ def set_iterations_handler(root, viewport):
         row=0, column=3, sticky='e' + 'w', padx=2, pady=2)
     dialog.protocol('WM_DELETE_WINDOW', close_dialog)
 
+def arbitrary_precision_handler(viewport, tk_boolvar):
+    viewport.set_arbitrary_precision(tk_boolvar.get())
+    # TODO Figure out how to deal with this correctly
+    # Avoid the race condition with arbitrary_precision_q
+    viewport.redraw_delayed(0.1)
 
 if __name__ == "__main__":
     # TODO Fix bugs when start method is not spawn
@@ -362,6 +384,13 @@ if __name__ == "__main__":
     view_menu.insert_separator(5)
     view_menu.add_command(label='Set iterations...', command=
                           functools.partial(set_iterations_handler, root, viewport))
+    menu_arbitrary_precision = tk.BooleanVar()
+    menu_arbitrary_precision.set(DEFAULT_ARBITRARY_PRECISION)
+    view_menu.add_checkbutton(label='High precision',
+                              variable=menu_arbitrary_precision,
+                              command=functools.partial(arbitrary_precision_handler,
+                                                        viewport,
+                                                        menu_arbitrary_precision))
 
     help_menu.add_command(label='Controls', accelerator='F1', command=controls_handler)
     help_menu.add_command(label='About', command=about_handler)
