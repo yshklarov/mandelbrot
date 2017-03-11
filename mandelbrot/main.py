@@ -2,6 +2,7 @@
 
 import os
 import sys
+import time
 import numbers
 import math
 import multiprocessing
@@ -35,32 +36,40 @@ PASSES = 6
 
 class Viewport:    
 
-    def __init__(self, window_id):
+    def __init__(self, window_id, dimensions=(0, 0)):
         # The window referenced by window_id must exist (eg. call root.update() in tkinter)
-        self.width, self.height = (0, 0)
-        self.center = 0
-        self.zoom = 1
+
+        self.window_id = window_id
+        self.dimensions = dimensions
+        self.center = complex(0)
+        self.zoom = float(1)
         self.max_iterations = DEFAULT_MAX_ITERATIONS
-        self.arbitrary_precision = None
-        self.arbitrary_precision_q = multiprocessing.Queue()
-        self.set_arbitrary_precision(DEFAULT_ARBITRARY_PRECISION)
-
-        # TODO Don't use queues like this: they all create race conditions.
-        self.size_q = multiprocessing.Queue()
-        self.location_q = multiprocessing.Queue()
-        self.max_iterations_q = multiprocessing.Queue()
-
-        self.render_event = multiprocessing.Event()
-        self.refresh_event = multiprocessing.Event()
-        self.redraw_q = multiprocessing.Queue()
-        self.redraw_scheduled = False
-        self.stop_event = multiprocessing.Event()
-        self.quit_event = multiprocessing.Event()
+        self.arbitrary_precision = DEFAULT_ARBITRARY_PRECISION
 
         self.status_callbacks = []
 
-        self.render_p = multiprocessing.Process(target=self.render, args=[window_id])
+        # Correctly initialize types
+        self.set_arbitrary_precision(
+            self.arbitrary_precision,
+            force=True,
+            update_render=False,
+            )
+
+        self.render_p = RenderProcess(window_id)
         self.render_p.start()
+        self.update_render_p()
+
+    def update_render_p(self, redraw=True):
+        if redraw:
+            self.render_p.stop()
+        self.render_p.update(
+            dimensions=self.dimensions,
+            maps=(self.re_map, self.im_map),
+            max_iterations=self.max_iterations,
+            arbitrary_precision=self.arbitrary_precision,
+            )
+        if redraw:
+            self.render_p.go()
 
     def register_status_callback(self, cb):
         self.status_callbacks.append(cb)
@@ -73,48 +82,50 @@ class Viewport:
         return '{:.8} + {:.8}i (Zoom = {:.3g})'.format(
                 float(self.center.real), float(self.center.imag), self.zoom)
 
-    def set_size(self, width, height):
-        if (self.width, self.height) != (width, height):
-            self.width = width
-            self.height = height
-            self.size_q.put((self.width, self.height))
-            self.stop_event.set()
-            self.redraw_delayed(0.01)
-        self.update_status()
+    def set_dimensions(self, dimensions):
+        # dimensions: tuple (width, height), width and height in pixels.
+        if self.dimensions != dimensions:
+            self.dimensions = dimensions
+            self._rebuild_maps()
+            self.update_render_p()
+            self.update_status()
 
     def set_max_iterations(self, max_iterations):
         if (self.max_iterations != max_iterations
                 and max_iterations >= 0):
             self.max_iterations = max_iterations
-            self.max_iterations_q.put(max_iterations)
-            self.redraw()
+            self.update_render_p()
 
-    def set_arbitrary_precision(self, arbitrary_precision):
+    def set_arbitrary_precision(self, arbitrary_precision, force=False, update_render=True):
         """ arbitrary_precision: bool """
         # Precision is not actually arbitrary during runtime but can be increased in
         # 'mandelbrot.py'.
-        if self.arbitrary_precision == arbitrary_precision:
+        if (self.arbitrary_precision == arbitrary_precision
+                and not force):
             return
         self.arbitrary_precision = arbitrary_precision
-        if arbitrary_precision:
+        if self.arbitrary_precision:
             self._complex = mp.mpc
             self.center = mp.mpc(self.center)
         else:
             self._complex = complex
             self.center = complex(self.center)
-        # TODO Transfer self._complex tosubprocess, too. (or is it unnecessary?)
-        self.arbitrary_precision_q.put(arbitrary_precision)
+        self._rebuild_maps()
+        if update_render:
+            self.update_render_p()
+
+    def go_to_location(self, center=None, zoom=None):
+        if center is not None:
+            self.center = center
+        if zoom is not None:
+            self.zoom = zoom
+        if (zoom is not None) or (center is not None):
+            self._rebuild_maps()
+            self.update_render_p()
+            self.update_status()
 
     def location(self):
         return (self.center, self.zoom)
-
-    def go_to_location(self, center, zoom=None):
-        self.center = center
-        if zoom is not None:
-            self.zoom = zoom
-        self.location_q.put((self.center, self.zoom))
-        self.update_status()
-        self.redraw()
 
     def drag_begin(self, x, y):
         self.drag_from = self.xy_to_complex(x, y)
@@ -132,108 +143,147 @@ class Viewport:
     
     def dilate(self, ratio, x=None, y=None):
         if x is None:
-            x = self.width // 2
+            x = self.dimensions[0] // 2
         if y is None:
-            y = self.height // 2
+            y = self.dimensions[1] // 2
         center_of_dilation = self.xy_to_complex(x, y)
         new_center = center_of_dilation + (self.center - center_of_dilation)*ratio
         self.go_to_location(new_center, self.zoom/ratio)
 
+    def _rebuild_maps(self):
+        self.re_map = [self.xy_to_complex(x, 0).real for x in range(0, self.dimensions[0])]
+        self.im_map = [1j*self.xy_to_complex(0, y).imag for y in range(0, self.dimensions[1])]
+
     def xy_to_complex(self, x, y):
-        x_rel = (x - self.width // 2)
-        y_rel = -(y - self.height // 2)
+        x_rel = (x - self.dimensions[0] // 2)
+        y_rel = -(y - self.dimensions[1] // 2)
         # Keep aspect ratio at 1:1.
-        size = max(self.width, self.height)
+        span = max(self.dimensions)
         offset = self._complex(x_rel * (RE_MAX - RE_MIN),
-                               y_rel * (IM_MAX - IM_MIN)) / (self.zoom * size)
+                               y_rel * (IM_MAX - IM_MIN)) / (self.zoom * span)
         return self.center + offset
 
+    def redraw(self):
+        self.render_p.restart()
+
+    def stop(self):
+        self.render_p.stop()
+
+    def close(self):
+        self.render_p.terminate()
+        self.render_p.join()
+
     def refresh(self):
-        # Re-paint the window surface (without rendering anew.)
+        # Re-paint the window surface, without stopping rendering or rendering anew.
+        self.render_p.refresh()
+
+
+class RenderProcess(multiprocessing.Process):
+
+    def __init__(self, window_id):
+        super().__init__()
+        self.window_id = window_id
+        self.render_event = multiprocessing.Event()
+        self.rendering_event = multiprocessing.Event()
+        self.refresh_event = multiprocessing.Event()
+        self.stop_event = multiprocessing.Event()
+        self.quit_event = multiprocessing.Event()
+        self.event_semaphore = multiprocessing.Semaphore(1)
+
+        self.dimensions = None
+        self.maps = None
+        self.max_iterations = None
+        self.arbitrary_precision = None
+
+        manager = multiprocessing.Manager()
+        self.data = manager.dict()
+        self.data_updated_event = multiprocessing.Event()
+        self.data_lock = multiprocessing.Lock()
+
+    def update(self, dimensions=None, maps=None, max_iterations=None, arbitrary_precision=None):
+        self.data_lock.acquire()
+        self.data.update({
+            'dimensions': dimensions,
+            'maps': maps,
+            'max_iterations': max_iterations,
+            'arbitrary_precision': arbitrary_precision,
+        })
+        self.data_lock.release()
+        self.data_updated_event.set()
+
+    def refresh(self):
+        # Re-paint the window surface, without stopping rendering or rendering anew.
         self.refresh_event.set()
 
-    def refresh_watchdog(self):
+    def _refresh_watchdog(self):
         while self.refresh_event.wait():
             self.refresh_event.clear()
             pygame.display.update()
 
-    def close(self):
-        # Clean up all child processes.
+    def go(self):
+        self.render_event.set()
+        # TODO wait until going?
+
+    def stop(self):
+        self.event_semaphore.acquire()
+        if self.rendering_event.is_set():
+            self.stop_event.set()
+        self.event_semaphore.release()
+        # TODO Wait until stopped?
+
+    def restart(self):
+        self.event_semaphore.acquire()
+        if self.rendering_event.is_set():
+            self.stop_event.set()
+        self.render_event.set()
+        self.event_semaphore.release()
+
+    def terminate(self):
+        # The RenderProcess will not terminate immediately; the caller should join() manually.
+        self.event_semaphore.acquire()
         self.quit_event.set()
         self.stop_event.set()
-        self.render_event.set()  # Release block in render()
+        self.event_semaphore.release()
+        self.render_event.set()  # Release block
 
-    def redraw_delayed(self, delay):
-        # Call redraw() after the given delay (in seconds). Repeat calls reset the delay to
-        # the new value. Do not block.
-        if not self.redraw_scheduled:
-            def wait(delay):
-                while True:
-                    try:
-                        delay = self.redraw_q.get(timeout=delay)
-                    except queue.Empty as e:  # Timeout reached
-                        self.redraw_scheduled = False
-                        self.redraw()
-                        break
-            self.redraw_scheduled = True
-            t = threading.Thread(target=wait, daemon=True, args=[delay])
-            t.start()
-        else:
-            self.redraw_q.put(delay)
-
-    def redraw(self):
-        # Re-render immediately.
-        self.stop_event.set()
-        self.render_event.set()
-
-    def render(self, window_id):
-        os.environ['SDL_WINDOWID'] = str(window_id)
+    def run(self):
+        os.environ['SDL_WINDOWID'] = str(self.window_id)
         self.canvas = pygame.display.set_mode()
         pygame.display.init()
-        threading.Thread(target=self.refresh_watchdog, daemon=True).start()
+        # We need this because we can't call pygame.display.update() from another different process.
+        threading.Thread(target=self._refresh_watchdog, daemon=True).start()
 
         while not self.quit_event.is_set():
+            # TODO Don't close and re-open pool, it's slow (takes up to 80 ms.)
             with multiprocessing.Pool(processes=WORKERS) as pool:
                 self.render_event.wait()
-                if self.quit_event.is_set():
-                    break
                 self.render_event.clear()
-                self.stop_event.clear()
 
-                # Get new instance variables, if changed
-                try:
-                    while True:
-                        self.width, self.height = self.size_q.get_nowait()
-                except queue.Empty as e: pass
+                if self.data_updated_event.is_set():
+                    self.data_lock.acquire()
+                    if self.dimensions != self.data['dimensions']:
+                         pygame.display.set_mode(self.data['dimensions'])
+                    self.dimensions = self.data['dimensions']
+                    self.maps = self.data['maps']
+                    self.max_iterations = self.data['max_iterations']
+                    self.arbitrary_precision = self.data['arbitrary_precision']
+                    self.data_updated_event.clear()
+                    self.data_lock.release()
 
-                try:
-                    while True:
-                        self.center, self.zoom = self.location_q.get_nowait()
-                except queue.Empty as e: pass
+                self.event_semaphore.acquire()
+                if self.stop_event.is_set():
+                    continue
+                self.rendering_event.set()
+                self.event_semaphore.release()
 
-                try:
-                    while True:
-                        self.max_iterations = self.max_iterations_q.get_nowait()
-                except queue.Empty as e: pass
-
-                try:
-                    while True:
-                        self.arbitrary_precision = self.arbitrary_precision_q.get_nowait()
-                except queue.Empty as e: pass
-
-
-                self.canvas.fill((0, 0, 0), pygame.Rect(0, 0, self.width, self.height))
-
-                max_pitch = 2 ** (PASSES - 1)
-                res = [self.xy_to_complex(x, 0).real
-                       for x in range(0, self.width + max_pitch // 2 - 1)]
-                ims = [1j*self.xy_to_complex(0, y).imag
-                       for y in range(0, self.height + max_pitch // 2 - 1)]
-
+                #print("Rendering... ", end='')
+                #sys.stdout.flush()
+                #t = time.time()
+                self.canvas.fill((0, 0, 0), pygame.Rect(0, 0, *self.dimensions))
                 work = []
                 for i in range(0, PASSES):
                     pitch = 2 ** (PASSES - i - 1)
-                    for x in range(0, self.width + pitch // 2 - 1, pitch):
+                    for x in range(0, self.dimensions[0], pitch):
                         # Don't repeat work that's been done on a previous pass.
                         y_first = 0
                         y_pitch = pitch
@@ -242,36 +292,50 @@ class Viewport:
                                 y_first = y_pitch
                                 y_pitch *= 2
                         work.append((x,
-                                     range(y_first, self.height + pitch // 2 - 1, y_pitch),
-                                     res,
-                                     ims,
+                                     range(y_first, self.dimensions[1], y_pitch),
+                                     self.maps[0],
+                                     self.maps[1],
                                      pitch))
+                worker_func = worker.worker(self.max_iterations, self.arbitrary_precision)
                 # Do not use imap_unordered here: it might cause earlier passes to overwrite later
                 # ones. And besides: It looks glitchy.
-                jobs = pool.imap(worker.worker(self.max_iterations,
-                                                         self.arbitrary_precision),
-                                           work)
+                columns = pool.imap(worker_func, work, chunksize=1)
 
-                for job in jobs:
-                    for (x, y, iterations_to_escape, pitch) in job:
-                        rect = (x - pitch // 2, y - pitch // 2, pitch, pitch)
-                        self.canvas.fill(self.colormap(iterations_to_escape), rect)
-                    pygame.display.update()
+                for column in columns:
                     if self.stop_event.is_set():
                         pool.terminate()
                         break
+                    for (x, y, iterations_to_escape, pitch) in column:
+                        rect = (x - pitch // 2, y - pitch // 2, pitch, pitch)
+                        self.canvas.fill(self._colormap(iterations_to_escape), rect)
+                    pygame.display.update()
+                #print("{:.6f}".format(time.time() - t))
+                self.event_semaphore.acquire()
+                self.rendering_event.clear()
+                self.stop_event.clear()
+                self.event_semaphore.release()
+
+    def _paint_column(self, column):
+        print(len(column))
+        print(column[0])
+        sys.stdout.flush()
+        for (x, y, iterations_to_escape, pitch) in column:
+            rect = (x - pitch // 2, y - pitch // 2, pitch, pitch)
+            self.canvas.fill(self._colormap(iterations_to_escape), rect)
+        pygame.display.update()
+
 
     # Memoizing isn't useful with color smoothing since n is not an integer.
     #@functools.lru_cache(maxsize=5000)
-    def colormap(self, n):
+    def _colormap(self, n):
         if n > self.max_iterations:
             return (0, 0, 0)
-        r = math.floor(self.triangle_wave(n, 30) * 255)
-        g = math.floor(self.triangle_wave(n, 100) * 255)
-        b = math.floor(self.triangle_wave(n, 400) * 255)
+        r = math.floor(self._triangle_wave(n, 30) * 255)
+        g = math.floor(self._triangle_wave(n, 100) * 255)
+        b = math.floor(self._triangle_wave(n, 400) * 255)
         return (r, g, b)
 
-    def triangle_wave(self, x, period):
+    def _triangle_wave(self, x, period):
         # Triangle wave with range from 0 to 1.
         return 2 * abs(x/period - round(x/period))
 
@@ -335,9 +399,6 @@ def set_iterations_handler(root, viewport):
 
 def arbitrary_precision_handler(viewport, tk_boolvar):
     viewport.set_arbitrary_precision(tk_boolvar.get())
-    # TODO Figure out how to deal with this correctly
-    # Avoid the race condition with arbitrary_precision_q
-    viewport.redraw_delayed(0.1)
 
 if __name__ == "__main__":
     # TODO Fix bugs when start method is not spawn
@@ -354,7 +415,7 @@ if __name__ == "__main__":
     embed.pack(expand=1, fill=tk.BOTH)
 
     root.update()  # Create embed frame before calling Viewport()
-    viewport = Viewport(embed.winfo_id())
+    viewport = Viewport(embed.winfo_id(), dimensions=widget_size(embed))
 
     status = tk.StringVar()
     viewport.register_status_callback(status.set)
@@ -408,7 +469,7 @@ if __name__ == "__main__":
     embed.bind('<ButtonRelease-1>', lambda ev: viewport.drag_end(ev.x, ev.y))
 
     # <Configure> gets called on widget resize
-    embed.bind('<Configure>', lambda _: viewport.set_size(*widget_size(embed)))
+    embed.bind('<Configure>', lambda _: viewport.set_dimensions(widget_size(embed)))
     embed.bind('<Visibility>', lambda _: embed.after(1, viewport.refresh))
     root.protocol('WM_DELETE_WINDOW', root.quit)
 

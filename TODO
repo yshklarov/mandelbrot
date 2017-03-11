@@ -1,4 +1,3 @@
-- Deal with queues: fix race conditions
 - Fix occasional crashes from worker subprocesses dying. Lead suspect: iterations_to_escape_ap().
 - Nicer (continuous) panning when dragging
 - Don't redraw whole canvas when dragging viewport
