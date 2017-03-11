@@ -219,8 +219,8 @@ class RenderProcess(multiprocessing.Process):
 
     def _refresh_watchdog(self):
         while self.refresh_event.wait():
-            self.refresh_event.clear()
             pygame.display.update()
+            self.refresh_event.clear()
 
     def go(self):
         self.render_event.set()
@@ -233,10 +233,8 @@ class RenderProcess(multiprocessing.Process):
         self.idle_event.wait()
 
     def restart(self):
-        with self.event_lock:
-            if self.rendering_event.is_set():
-                self.stop_event.set()
-            self.render_event.set()
+        self.stop()
+        self.go()
 
     def terminate(self):
         # The RenderProcess will not terminate immediately; the caller should join() manually.
@@ -270,6 +268,7 @@ class RenderProcess(multiprocessing.Process):
 
                 with self.event_lock:
                     if self.stop_event.is_set():
+                        self.stop_event.clear()
                         continue
                     self.rendering_event.set()
                     self.idle_event.clear()
@@ -313,7 +312,7 @@ class RenderProcess(multiprocessing.Process):
                 with self.event_lock:
                     self.stop_event.clear()
                     self.rendering_event.clear()
-                self.idle_event.set()
+                    self.idle_event.set()
 
     def _paint_column(self, column):
         print(len(column))
@@ -362,6 +361,7 @@ def go_to_location_handler(viewport):
         if (not isinstance(location, tuple)) or (len(location) != 2):
             raise ValueError
         (center, zoom) = location
+        # TODO Set precision based on read types (through tk variable)
         if not (isinstance(center, mpmath.mpc) or isinstance(center, numbers.Complex)) \
            or not isinstance(zoom, numbers.Real):
             raise ValueError

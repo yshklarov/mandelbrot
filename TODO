@@ -1,5 +1,8 @@
-- Fix occasional crashes from worker subprocesses dying. Lead suspect: iterations_to_escape_ap().
+- Fix occasional crashes: Pool.terminate() fails to return.
+  - Happens when rapidly scrolling in/out in 'high precision' mode.
+  - Possible (ugly) solution: reuse the pool.
 - Nicer (continuous) panning when dragging
+- Store bookmarks with thumbnails
 - Don't redraw whole canvas when dragging viewport
 - On zoom/pan/resize, stretch old viewport instead of filling with black
   - Maybe move away from tkinter (since Frames get re-painted when resized)
