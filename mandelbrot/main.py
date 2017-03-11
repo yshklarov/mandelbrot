@@ -28,7 +28,9 @@ DEFAULT_ARBITRARY_PRECISION = False
 RE_MIN = IM_MIN = -2
 RE_MAX = IM_MAX = 2
 
-WORKERS = 8
+# If WORKERS is None then os.cpucount() is used.
+WORKERS = None
+#WORKERS = 8
 
 # Set the number of passes for progressive rendering. Keep this number fairly low to avoid flicker.
 PASSES = 6
@@ -54,7 +56,6 @@ class Viewport:
             force=True,
             update_render=False,
             )
-
         self.render_p = RenderProcess(window_id)
         self.render_p.start()
         self.update_render_p()
@@ -185,6 +186,8 @@ class RenderProcess(multiprocessing.Process):
         self.window_id = window_id
         self.render_event = multiprocessing.Event()
         self.rendering_event = multiprocessing.Event()
+        self.idle_event = multiprocessing.Event()
+        self.idle_event.set()
         self.refresh_event = multiprocessing.Event()
         self.stop_event = multiprocessing.Event()
         self.quit_event = multiprocessing.Event()
@@ -221,13 +224,13 @@ class RenderProcess(multiprocessing.Process):
 
     def go(self):
         self.render_event.set()
-        # TODO wait until going?
+        #self.rendering_event.wait()
 
     def stop(self):
         with self.event_lock:
             if self.rendering_event.is_set():
                 self.stop_event.set()
-        # TODO Wait until stopped?
+        self.idle_event.wait()
 
     def restart(self):
         with self.event_lock:
@@ -269,6 +272,7 @@ class RenderProcess(multiprocessing.Process):
                     if self.stop_event.is_set():
                         continue
                     self.rendering_event.set()
+                    self.idle_event.clear()
 
                 #print("Rendering... ", end='')
                 #sys.stdout.flush()
@@ -307,8 +311,9 @@ class RenderProcess(multiprocessing.Process):
                     pygame.display.update()
                 #print("{:.6f}".format(time.time() - t))
                 with self.event_lock:
-                    self.rendering_event.clear()
                     self.stop_event.clear()
+                    self.rendering_event.clear()
+                self.idle_event.set()
 
     def _paint_column(self, column):
         print(len(column))
