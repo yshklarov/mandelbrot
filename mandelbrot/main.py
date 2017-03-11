@@ -188,7 +188,7 @@ class RenderProcess(multiprocessing.Process):
         self.refresh_event = multiprocessing.Event()
         self.stop_event = multiprocessing.Event()
         self.quit_event = multiprocessing.Event()
-        self.event_semaphore = multiprocessing.Semaphore(1)
+        self.event_lock = multiprocessing.Lock()
 
         self.dimensions = None
         self.maps = None
@@ -201,14 +201,13 @@ class RenderProcess(multiprocessing.Process):
         self.data_lock = multiprocessing.Lock()
 
     def update(self, dimensions=None, maps=None, max_iterations=None, arbitrary_precision=None):
-        self.data_lock.acquire()
-        self.data.update({
-            'dimensions': dimensions,
-            'maps': maps,
-            'max_iterations': max_iterations,
-            'arbitrary_precision': arbitrary_precision,
-        })
-        self.data_lock.release()
+        with self.data_lock:
+            self.data.update({
+                'dimensions': dimensions,
+                'maps': maps,
+                'max_iterations': max_iterations,
+                'arbitrary_precision': arbitrary_precision,
+            })
         self.data_updated_event.set()
 
     def refresh(self):
@@ -225,25 +224,22 @@ class RenderProcess(multiprocessing.Process):
         # TODO wait until going?
 
     def stop(self):
-        self.event_semaphore.acquire()
-        if self.rendering_event.is_set():
-            self.stop_event.set()
-        self.event_semaphore.release()
+        with self.event_lock:
+            if self.rendering_event.is_set():
+                self.stop_event.set()
         # TODO Wait until stopped?
 
     def restart(self):
-        self.event_semaphore.acquire()
-        if self.rendering_event.is_set():
-            self.stop_event.set()
-        self.render_event.set()
-        self.event_semaphore.release()
+        with self.event_lock:
+            if self.rendering_event.is_set():
+                self.stop_event.set()
+            self.render_event.set()
 
     def terminate(self):
         # The RenderProcess will not terminate immediately; the caller should join() manually.
-        self.event_semaphore.acquire()
-        self.quit_event.set()
-        self.stop_event.set()
-        self.event_semaphore.release()
+        with self.event_lock:
+            self.quit_event.set()
+            self.stop_event.set()
         self.render_event.set()  # Release block
 
     def run(self):
@@ -260,21 +256,19 @@ class RenderProcess(multiprocessing.Process):
                 self.render_event.clear()
 
                 if self.data_updated_event.is_set():
-                    self.data_lock.acquire()
-                    if self.dimensions != self.data['dimensions']:
-                         pygame.display.set_mode(self.data['dimensions'])
-                    self.dimensions = self.data['dimensions']
-                    self.maps = self.data['maps']
-                    self.max_iterations = self.data['max_iterations']
-                    self.arbitrary_precision = self.data['arbitrary_precision']
-                    self.data_updated_event.clear()
-                    self.data_lock.release()
+                    with self.data_lock:
+                        if self.dimensions != self.data['dimensions']:
+                             pygame.display.set_mode(self.data['dimensions'])
+                        self.dimensions = self.data['dimensions']
+                        self.maps = self.data['maps']
+                        self.max_iterations = self.data['max_iterations']
+                        self.arbitrary_precision = self.data['arbitrary_precision']
+                        self.data_updated_event.clear()
 
-                self.event_semaphore.acquire()
-                if self.stop_event.is_set():
-                    continue
-                self.rendering_event.set()
-                self.event_semaphore.release()
+                with self.event_lock:
+                    if self.stop_event.is_set():
+                        continue
+                    self.rendering_event.set()
 
                 #print("Rendering... ", end='')
                 #sys.stdout.flush()
@@ -303,17 +297,18 @@ class RenderProcess(multiprocessing.Process):
 
                 for column in columns:
                     if self.stop_event.is_set():
-                        pool.terminate()
+                        # pool.terminate() often crashes during high precision. Why?
+                        # TODO: This doesn't completely fix the crash.
+                        pool.close()
                         break
                     for (x, y, iterations_to_escape, pitch) in column:
                         rect = (x - pitch // 2, y - pitch // 2, pitch, pitch)
                         self.canvas.fill(self._colormap(iterations_to_escape), rect)
                     pygame.display.update()
                 #print("{:.6f}".format(time.time() - t))
-                self.event_semaphore.acquire()
-                self.rendering_event.clear()
-                self.stop_event.clear()
-                self.event_semaphore.release()
+                with self.event_lock:
+                    self.rendering_event.clear()
+                    self.stop_event.clear()
 
     def _paint_column(self, column):
         print(len(column))
